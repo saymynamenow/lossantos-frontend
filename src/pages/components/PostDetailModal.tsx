@@ -4,7 +4,9 @@ import { FaceIcon } from "@radix-ui/react-icons";
 import MentionInput, { type MentionInputRef } from "./MentionInput";
 import MentionText from "./MentionText";
 import UserBadges from "./UserBadges";
-import type { Post } from "../../type";
+import { AccountStatusWarning } from "../../components/AccountStatusWarning";
+import type { Post, User } from "../../type";
+import { canUserComment, canUserReact } from "../../utils/accountStatus";
 
 // Helper function to safely truncate text with mentions
 const safeTruncateWithMentions = (text: string, maxLength: number): string => {
@@ -45,7 +47,7 @@ interface PostDetailModalProps {
   post: Post;
   isOpen: boolean;
   onClose: () => void;
-  currentUser: { id: string; name: string } | null;
+  currentUser: User | null;
   onReact: (postId: string, reactionType: string) => void;
   onToggleComments: (postId: string) => void;
   showComments: boolean;
@@ -82,6 +84,7 @@ const PostDetailModal: React.FC<PostDetailModalProps> = ({
   );
 
   // Update local post when prop changes
+  const url = import.meta.env.VITE_UPLOADS_URL;
   useEffect(() => {
     setLocalPost(post);
     // Reset modal state when post changes
@@ -120,6 +123,12 @@ const PostDetailModal: React.FC<PostDetailModalProps> = ({
   // Handle reaction with optimistic update
   const handleReactionClick = async (reactionType: string) => {
     if (!currentUser) return;
+
+    // Check if user can react
+    if (!canUserReact(currentUser)) {
+      console.log("User cannot react due to account status");
+      return;
+    }
 
     // Optimistic update for immediate UI feedback
     setLocalPost((prevPost) => {
@@ -193,13 +202,42 @@ const PostDetailModal: React.FC<PostDetailModalProps> = ({
   };
   // Local comment handling functions
   const handleLocalCommentSubmit = async (postId: string) => {
-    const commentContent = modalCommentInput.trim();
-    if (!commentContent || !currentUser) return;
+    console.log("handleLocalCommentSubmit called with postId:", postId);
+
+    if (!currentUser) {
+      console.log("No current user");
+      return;
+    }
+
+    // Check if user can comment
+    if (!canUserComment(currentUser)) {
+      console.log("User cannot comment due to account status");
+      return;
+    }
 
     try {
       // Get the formatted content with mentions from the modal comment input
-      const formattedContent =
-        modalCommentInputRef.current?.getFormattedValue() || commentContent;
+      const stateContent = modalCommentInput.trim();
+      const refContent = modalCommentInputRef.current
+        ?.getFormattedValue()
+        ?.trim();
+
+      // Use whichever content is available
+      const formattedContent = refContent || stateContent;
+
+      console.log("Content sources:", {
+        stateContent,
+        refContent,
+        formattedContent,
+        modalCommentInputRef: !!modalCommentInputRef.current,
+      });
+
+      if (!formattedContent) {
+        console.log("No content to submit");
+        return;
+      }
+
+      console.log("Submitting comment:", { postId, formattedContent });
 
       const response = await fetch(
         `${import.meta.env.VITE_API_URL}/comment/${postId}`,
@@ -249,9 +287,20 @@ const PostDetailModal: React.FC<PostDetailModalProps> = ({
           };
           onUpdatePost(updatedPost);
         }
+
+        console.log("Comment submitted successfully");
+      } else {
+        console.error(
+          "Failed to submit comment - HTTP error:",
+          response.status
+        );
       }
     } catch (error) {
       console.error("Failed to submit comment", error);
+      console.error(
+        "Error details:",
+        (error as any).response?.data || (error as any).message
+      );
     }
   };
 
@@ -336,7 +385,7 @@ const PostDetailModal: React.FC<PostDetailModalProps> = ({
               >
                 <img
                   key={currentImageIndex}
-                  src={post.media[currentImageIndex].url}
+                  src={url + post.media[currentImageIndex].url}
                   alt={`Post media ${currentImageIndex + 1}`}
                   className="w-full h-full object-contain transition-opacity duration-300 ease-in-out"
                 />
@@ -435,14 +484,65 @@ const PostDetailModal: React.FC<PostDetailModalProps> = ({
           </button>
         </div>{" "}
         {/* Right side - Post details */}
-        <div className="w-full md:w-[450px] flex flex-col bg-white h-full">
+        <div
+          className={`w-full md:w-[450px] flex flex-col h-full relative ${
+            (post as any).isBoosted
+              ? "bg-white sparkle-container boosted-border"
+              : "bg-white"
+          }`}
+        >
+          {/* Sparkle effects for boosted posts */}
+          {(post as any).isBoosted && (
+            <>
+              <div className="sparkle"></div>
+              <div className="sparkle"></div>
+              <div className="sparkle"></div>
+              <div className="sparkle"></div>
+              <div className="sparkle"></div>
+              <div className="sparkle"></div>
+            </>
+          )}
+
+          {/* Boosted Post Indicator */}
+          {(post as any).isBoosted && (
+            <div className="mx-4 mt-4 mb-2 flex items-center justify-between bg-gradient-to-r from-blue-50 to-purple-50 px-4 py-3 rounded-lg border border-blue-200 relative overflow-hidden">
+              {/* Animated background */}
+              <div className="absolute inset-0 bg-gradient-to-r from-blue-100/50 via-purple-100/50 to-pink-100/50 opacity-30 animate-pulse"></div>
+
+              {/* Shimmer effect */}
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent opacity-50 shimmer-effect"></div>
+
+              <div className="flex items-center space-x-2 text-sm text-blue-700 relative z-10">
+                <div className="animate-bounce">
+                  <svg
+                    width="18"
+                    height="18"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    viewBox="0 0 24 24"
+                    className="text-blue-600"
+                  >
+                    <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+                  </svg>
+                </div>
+                <span className="font-bold text-blue-800">Boosted Post</span>
+              </div>
+              <div className="flex items-center space-x-1 relative z-10">
+                <span className="text-xs text-white bg-gradient-to-r from-blue-500 via-purple-600 to-pink-500 px-3 py-1 rounded-full font-bold shadow-lg animate-pulse">
+                  ⚡ Promoted
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Header */}
-          <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+          <div className="p-6 border-b border-gray-200 flex items-center justify-between relative z-10">
             <div className="flex items-center">
               <div className="w-12 h-12 rounded-full bg-gray-200 mr-4 flex items-center justify-center">
                 {post.author?.profilePicture ? (
                   <img
-                    src={post.author?.profilePicture}
+                    src={`${url}/${post.author?.profilePicture}`}
                     alt={post.author?.username || "User"}
                     className="w-full h-full rounded-full object-cover"
                   />
@@ -456,13 +556,37 @@ const PostDetailModal: React.FC<PostDetailModalProps> = ({
               </div>
               <div>
                 <div className="font-semibold text-gray-800 text-lg">
-                  {post.author?.username || "Unknown User"}
-                  <UserBadges
-                    isVerified={post.author?.isVerified}
-                    isPro={post.author?.isProUser}
-                    size="md"
-                    spacing="normal"
-                  />
+                  {post.page ? (
+                    /* If it's a page post, show "username -> Page name" format */
+                    <div className="flex items-center space-x-2">
+                      <span>{post.author?.username || "Unknown User"}</span>
+                      <UserBadges
+                        isVerified={post.author?.isVerified}
+                        isPro={post.author?.isProUser}
+                        size="md"
+                        spacing="normal"
+                      />
+                      <span className="text-gray-500">→</span>
+                      <span>{post.page.name}</span>
+                      <UserBadges
+                        isVerified={post.page.isVerified}
+                        isPro={false}
+                        size="md"
+                        spacing="normal"
+                      />
+                    </div>
+                  ) : (
+                    /* If it's a regular post, show user name */
+                    <div className="flex items-center space-x-1">
+                      <span>{post.author?.name || "Unknown User"}</span>
+                      <UserBadges
+                        isVerified={post.author?.isVerified}
+                        isPro={post.author?.isProUser}
+                        size="md"
+                        spacing="normal"
+                      />
+                    </div>
+                  )}
                 </div>
                 <div className="text-xs text-gray-400">
                   {formatDistanceToNow(new Date(post.createdAt), {
@@ -490,7 +614,7 @@ const PostDetailModal: React.FC<PostDetailModalProps> = ({
           </div>
 
           {/* Post content */}
-          <div className="p-4 border-b border-gray-200 text-black">
+          <div className="p-4 border-b border-gray-200 text-black relative z-10">
             {post.content && post.content.length > 50 ? (
               <>
                 {modalExpandedPost ? (
@@ -525,7 +649,7 @@ const PostDetailModal: React.FC<PostDetailModalProps> = ({
           </div>
 
           {/* Reactions and Comments Count */}
-          <div className="px-4 py-2 border-b border-gray-200">
+          <div className="px-4 py-2 border-b border-gray-200 relative z-10">
             <div className="flex items-center justify-between">
               {" "}
               {/* Reactions */}
@@ -579,46 +703,10 @@ const PostDetailModal: React.FC<PostDetailModalProps> = ({
           </div>
 
           {/* Action buttons */}
-          <div className="px-4 py-3 border-b border-gray-200 flex items-center space-x-6">
+          <div className="px-4 py-3 border-b border-gray-200 flex items-center space-x-6 relative z-10">
             {/* Like Button */}
-            <div
-              className={`flex items-center group transition focus:outline-none cursor-pointer ${
-                userReaction
-                  ? userReaction.type === "LIKE"
-                    ? "text-blue-600"
-                    : userReaction.type === "LOVE"
-                    ? "text-red-500"
-                    : userReaction.type === "HAHA"
-                    ? "text-yellow-500"
-                    : userReaction.type === "SAD"
-                    ? "text-gray-600"
-                    : userReaction.type === "WOW"
-                    ? "text-purple-500"
-                    : userReaction.type === "ANGRY"
-                    ? "text-orange-500"
-                    : "text-blue-600"
-                  : "text-gray-500 hover:text-blue-600"
-              }`}
-              role="button"
-              tabIndex={0}
-            >
-              {userReaction ? (
-                <span className="text-lg mr-2">
-                  {userReaction.type === "LIKE"
-                    ? "👍"
-                    : userReaction.type === "LOVE"
-                    ? "❤️"
-                    : userReaction.type === "HAHA"
-                    ? "😂"
-                    : userReaction.type === "SAD"
-                    ? "😢"
-                    : userReaction.type === "WOW"
-                    ? "😮"
-                    : userReaction.type === "ANGRY"
-                    ? "😠"
-                    : "👍"}
-                </span>
-              ) : (
+            {!canUserReact(currentUser) ? (
+              <div className="flex items-center text-gray-400 cursor-not-allowed">
                 <svg
                   width="20"
                   height="20"
@@ -630,56 +718,114 @@ const PostDetailModal: React.FC<PostDetailModalProps> = ({
                 >
                   <path d="M14 9V5a3 3 0 0 0-6 0v4H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-3z" />
                 </svg>
-              )}
-
-              <div className="relative">
-                <span className="text-sm font-medium">
-                  {userReaction
+                <span className="text-sm font-medium">Like</span>
+              </div>
+            ) : (
+              <div
+                className={`flex items-center group transition focus:outline-none cursor-pointer ${
+                  userReaction
                     ? userReaction.type === "LIKE"
-                      ? "Like"
+                      ? "text-blue-600"
                       : userReaction.type === "LOVE"
-                      ? "Love"
+                      ? "text-red-500"
                       : userReaction.type === "HAHA"
-                      ? "Haha"
+                      ? "text-yellow-500"
                       : userReaction.type === "SAD"
-                      ? "Sad"
+                      ? "text-gray-600"
                       : userReaction.type === "WOW"
-                      ? "Wow"
+                      ? "text-purple-500"
                       : userReaction.type === "ANGRY"
-                      ? "Angry"
-                      : "Like"
-                    : "Like"}
-                </span>
+                      ? "text-orange-500"
+                      : "text-blue-600"
+                    : "text-gray-500 hover:text-blue-600"
+                }`}
+                role="button"
+                tabIndex={0}
+              >
+                {userReaction ? (
+                  <span className="text-lg mr-2">
+                    {userReaction.type === "LIKE"
+                      ? "👍"
+                      : userReaction.type === "LOVE"
+                      ? "❤️"
+                      : userReaction.type === "HAHA"
+                      ? "😂"
+                      : userReaction.type === "SAD"
+                      ? "😢"
+                      : userReaction.type === "WOW"
+                      ? "😮"
+                      : userReaction.type === "ANGRY"
+                      ? "😠"
+                      : "👍"}
+                  </span>
+                ) : (
+                  <svg
+                    width="20"
+                    height="20"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    className="mr-2"
+                    viewBox="0 0 24 24"
+                  >
+                    <path d="M14 9V5a3 3 0 0 0-6 0v4H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-3z" />
+                  </svg>
+                )}
 
-                <div className="absolute left-0 -translate-x-1/2 bottom-full mb-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-                  <div className="bg-white rounded-full shadow-2xl border border-gray-200 py-1 px-2 flex space-x-1">
-                    {["👍", "❤️", "😂", "😢", "😮", "😠"].map((emoji, i) => {
-                      const reactionTypes = [
-                        "LIKE",
-                        "LOVE",
-                        "HAHA",
-                        "SAD",
-                        "WOW",
-                        "ANGRY",
-                      ];
-                      const isActive = userReaction?.type === reactionTypes[i];
+                <div className="relative">
+                  <span className="text-sm font-medium">
+                    {userReaction
+                      ? userReaction.type === "LIKE"
+                        ? "Like"
+                        : userReaction.type === "LOVE"
+                        ? "Love"
+                        : userReaction.type === "HAHA"
+                        ? "Haha"
+                        : userReaction.type === "SAD"
+                        ? "Sad"
+                        : userReaction.type === "WOW"
+                        ? "Wow"
+                        : userReaction.type === "ANGRY"
+                        ? "Angry"
+                        : "Like"
+                      : "Like"}
+                  </span>
 
-                      return (
-                        <button
-                          key={i}
-                          className={`hover:scale-125 transition-transform duration-150 p-1 ${
-                            isActive ? "scale-110 bg-blue-100 rounded-full" : ""
-                          }`}
-                          onClick={() => handleReactionClick(reactionTypes[i])}
-                        >
-                          <span className="text-2xl">{emoji}</span>
-                        </button>
-                      );
-                    })}
+                  <div className="absolute left-0 -translate-x-1/2 bottom-full mb-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                    <div className="bg-white rounded-full shadow-2xl border border-gray-200 py-1 px-2 flex space-x-1">
+                      {["👍", "❤️", "😂", "😢", "😮", "😠"].map((emoji, i) => {
+                        const reactionTypes = [
+                          "LIKE",
+                          "LOVE",
+                          "HAHA",
+                          "SAD",
+                          "WOW",
+                          "ANGRY",
+                        ];
+                        const isActive =
+                          userReaction?.type === reactionTypes[i];
+
+                        return (
+                          <button
+                            key={i}
+                            className={`hover:scale-125 transition-transform duration-150 p-1 ${
+                              isActive
+                                ? "scale-110 bg-blue-100 rounded-full"
+                                : ""
+                            }`}
+                            onClick={() =>
+                              handleReactionClick(reactionTypes[i])
+                            }
+                          >
+                            <span className="text-2xl">{emoji}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Comment Button */}
             <button
@@ -702,7 +848,7 @@ const PostDetailModal: React.FC<PostDetailModalProps> = ({
           </div>
 
           {/* Comments section */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto relative z-10">
             {modalShowComments && (
               <div className="p-4 space-y-3">
                 {localPost.comments && localPost.comments.length > 0 ? (
@@ -759,44 +905,75 @@ const PostDetailModal: React.FC<PostDetailModalProps> = ({
           </div>
 
           {/* Comment input */}
-          <div className="p-4 border-t border-gray-200">
-            <div className="relative">
-              <MentionInput
-                value={modalCommentInput}
-                onChange={setModalCommentInput}
-                placeholder="Write a comment..."
-                className="w-full pr-12"
-                ref={modalCommentInputRef}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    handleLocalCommentSubmit(post.id);
-                  }
-                }}
-              />
-              <button
-                onClick={() => handleLocalCommentSubmit(post.id)}
-                disabled={!modalCommentInput.trim()}
-                className={`absolute right-3 top-1/2 transform -translate-y-1/2 p-2 rounded-full transition ${
-                  modalCommentInput.trim()
-                    ? "text-red-600 hover:bg-red-50 cursor-pointer"
-                    : "text-gray-400 cursor-not-allowed"
-                }`}
-              >
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
+          <div className="p-4 border-t border-gray-200 relative z-10">
+            {!canUserComment(currentUser) ? (
+              <div>
+                <div className="relative">
+                  <div className="w-full pr-12 p-3 border border-gray-200 rounded-lg bg-gray-100 text-gray-400 cursor-not-allowed">
+                    Write a comment...
+                  </div>
+                  <button
+                    disabled
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 p-2 rounded-full text-gray-400 cursor-not-allowed"
+                  >
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <line x1="22" y1="2" x2="11" y2="13"></line>
+                      <polygon points="22,2 15,22 11,13 2,9 22,2"></polygon>
+                    </svg>
+                  </button>
+                </div>
+                <div className="mt-3">
+                  <AccountStatusWarning user={currentUser} />
+                </div>
+              </div>
+            ) : (
+              <div className="relative">
+                <MentionInput
+                  value={modalCommentInput}
+                  onChange={setModalCommentInput}
+                  placeholder="Write a comment..."
+                  className="w-full pr-12"
+                  ref={modalCommentInputRef}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      handleLocalCommentSubmit(post.id);
+                    }
+                  }}
+                />
+                <button
+                  onClick={() => handleLocalCommentSubmit(post.id)}
+                  disabled={!modalCommentInput.trim()}
+                  className={`absolute right-3 top-1/2 transform -translate-y-1/2 p-2 rounded-full transition ${
+                    modalCommentInput.trim()
+                      ? "text-red-600 hover:bg-red-50 cursor-pointer"
+                      : "text-gray-400 cursor-not-allowed"
+                  }`}
                 >
-                  <line x1="22" y1="2" x2="11" y2="13"></line>
-                  <polygon points="22,2 15,22 11,13 2,9 22,2"></polygon>
-                </svg>
-              </button>
-            </div>
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22,2 15,22 11,13 2,9 22,2"></polygon>
+                  </svg>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

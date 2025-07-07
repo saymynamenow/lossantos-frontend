@@ -1,6 +1,8 @@
 import { useNavigate } from "react-router-dom";
 import { FaceIcon } from "@radix-ui/react-icons";
 import UserBadges from "./UserBadges";
+import type { User } from "../../type";
+import { canUserSendMessage } from "../../utils/accountStatus";
 
 interface Friend {
   id: string;
@@ -14,15 +16,18 @@ interface Friend {
 interface FriendsSectionProps {
   friends: Friend[];
   friendsLoading: boolean;
+  currentUser?: User | null;
   onBackToTimeline: () => void;
 }
 
 export default function FriendsSection({
   friends,
   friendsLoading,
+  currentUser,
   onBackToTimeline,
 }: FriendsSectionProps) {
   const navigate = useNavigate();
+  const url = import.meta.env.VITE_UPLOADS_URL;
 
   return (
     <div className="bg-white rounded-lg shadow-md p-8">
@@ -60,7 +65,7 @@ export default function FriendsSection({
               <div className="w-20 h-20 rounded-full bg-gray-200 overflow-hidden mx-auto mb-4">
                 {friend.profilePicture ? (
                   <img
-                    src={friend.profilePicture}
+                    src={`${url}/${friend.profilePicture}`}
                     alt={friend.name || friend.username}
                     className="w-full h-full object-cover"
                   />
@@ -104,7 +109,17 @@ export default function FriendsSection({
                       e.stopPropagation();
                       // Handle message action
                     }}
-                    className="flex-1 bg-gray-200 text-gray-800 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-300 transition"
+                    disabled={!canUserSendMessage(currentUser || null)}
+                    className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition ${
+                      canUserSendMessage(currentUser || null)
+                        ? "bg-gray-200 text-gray-800 hover:bg-gray-300"
+                        : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                    }`}
+                    title={
+                      !canUserSendMessage(currentUser || null)
+                        ? "Account restricted - cannot send messages"
+                        : ""
+                    }
                   >
                     Message
                   </button>

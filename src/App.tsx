@@ -15,6 +15,11 @@ import PageCreate from "./pages/pageCreate";
 import PageDashboard from "./pages/pageDashboard";
 import PeoplePage from "./pages/peoplePage";
 import PendingRequestsPage from "./pages/pendingRequestsPage";
+import SettingsPage from "./pages/settingsPage";
+import AboutUs from "./pages/aboutUs";
+import ComingSoon from "./pages/comingSoon";
+import BoostedPosts from "./pages/boostedPosts";
+import Rules from "./pages/rules";
 
 export default function App() {
   return (
@@ -39,6 +44,11 @@ export default function App() {
           />
           <Route path="/people" element={<PeoplePage />} />
           <Route path="/admin" element={<AdminPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/about" element={<AboutUs />} />
+          <Route path="/comingsoon" element={<ComingSoon />} />
+          <Route path="/boosted-posts" element={<BoostedPosts />} />
+          <Route path="/rules" element={<Rules />} />
         </Route>
         <Route path="/" element={<RootRedirect />} />
         <Route path="/login" element={<Login />} />

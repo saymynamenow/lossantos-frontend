@@ -11,13 +11,14 @@ const PostMediaGrid: React.FC<PostMediaGridProps> = ({
   onImageClick,
 }) => {
   if (!media || media.length === 0) return null;
+  const url = import.meta.env.VITE_UPLOADS_URL;
   if (media.length === 1) {
     return (
       <div className="mb-4">
         <img
-          src={media[0].url}
+          src={`${url}${media[0].url}`}
           alt="media-0"
-          className="w-full h-auto object-cover rounded cursor-pointer"
+          className="w-full h-auto max-h-96 object-cover rounded-lg cursor-pointer"
           onClick={onImageClick}
         />
       </div>
@@ -29,7 +30,7 @@ const PostMediaGrid: React.FC<PostMediaGridProps> = ({
         {media.map((m, i) => (
           <img
             key={i}
-            src={m.url}
+            src={`${url}${m.url}`}
             alt={`media-${i}`}
             className="w-full object-cover rounded cursor-pointer"
             onClick={onImageClick}
@@ -44,7 +45,7 @@ const PostMediaGrid: React.FC<PostMediaGridProps> = ({
       <div className="flex gap-2 mb-4">
         {/* Left big image */}
         <img
-          src={media[0].url}
+          src={`${url}${media[0].url}`}
           alt="media-0"
           className="w-1/2 object-cover rounded cursor-pointer"
           onClick={onImageClick}
@@ -53,7 +54,7 @@ const PostMediaGrid: React.FC<PostMediaGridProps> = ({
         {/* Right side: stacked 2 (with optional +N on last one) */}
         <div className="flex flex-col gap-2 w-1/2">
           <img
-            src={media[1].url}
+            src={`${url}${media[1].url}`}
             alt="media-1"
             className="w-full h-1/2 object-cover rounded cursor-pointer"
             onClick={onImageClick}
@@ -64,7 +65,7 @@ const PostMediaGrid: React.FC<PostMediaGridProps> = ({
               onClick={onImageClick}
             >
               <img
-                src={media[2].url}
+                src={`${url}${media[2].url}`}
                 alt="media-2"
                 className="w-full h-full object-cover rounded"
               />
@@ -74,7 +75,7 @@ const PostMediaGrid: React.FC<PostMediaGridProps> = ({
             </div>
           ) : (
             <img
-              src={media[2].url}
+              src={`${url}${media[2].url}`}
               alt="media-2"
               className="w-full h-1/2 object-cover rounded cursor-pointer"
               onClick={onImageClick}

@@ -7,6 +7,8 @@ import RightSidebar from "./components/RightSidebar";
 import UserBadges from "./components/UserBadges";
 import { FaceIcon, PlusIcon, Cross2Icon } from "@radix-ui/react-icons";
 import apiService from "../services/api";
+import { canUserSendFriendRequest } from "../utils/accountStatus";
+import { AccountStatusWarning } from "../components/AccountStatusWarning";
 
 interface FriendSuggestion extends User {
   mutualFriends?: number;
@@ -16,6 +18,7 @@ interface FriendSuggestion extends User {
 const PeoplePage: React.FC = () => {
   const navigate = useNavigate();
   const [suggestions, setSuggestions] = useState<FriendSuggestion[]>([]);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [sendingRequests, setSendingRequests] = useState<Set<string>>(
     new Set()
@@ -31,6 +34,7 @@ const PeoplePage: React.FC = () => {
 
       // Get current user
       const userData = await apiService.user.getCurrentUser();
+      setCurrentUser(userData);
 
       // Get friend suggestions (you'll need to implement this API endpoint)
       // For now, we'll get all users and filter out friends
@@ -96,6 +100,8 @@ const PeoplePage: React.FC = () => {
   };
 
   const handleSendFriendRequest = async (userId: string) => {
+    if (!canUserSendFriendRequest(currentUser)) return;
+
     try {
       setSendingRequests((prev) => new Set(prev).add(userId));
 
@@ -183,6 +189,13 @@ const PeoplePage: React.FC = () => {
             </p>
           </div>
 
+          {/* Account Status Warning */}
+          {currentUser && !canUserSendFriendRequest(currentUser) && (
+            <div className="mb-8">
+              <AccountStatusWarning user={currentUser} />
+            </div>
+          )}
+
           {/* Suggestions Grid */}
           {suggestions.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -258,8 +271,24 @@ const PeoplePage: React.FC = () => {
                     <div className="space-y-2">
                       <button
                         onClick={() => handleSendFriendRequest(user.id)}
-                        disabled={sendingRequests.has(user.id)}
-                        className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg font-medium hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2"
+                        disabled={
+                          sendingRequests.has(user.id) ||
+                          !canUserSendFriendRequest(currentUser)
+                        }
+                        className={`w-full py-2 px-4 rounded-lg font-medium transition-colors flex items-center justify-center space-x-2 ${
+                          canUserSendFriendRequest(currentUser)
+                            ? "bg-blue-600 text-white hover:bg-blue-700"
+                            : "bg-gray-400 text-gray-200 cursor-not-allowed"
+                        } ${
+                          sendingRequests.has(user.id)
+                            ? "bg-blue-400 cursor-not-allowed"
+                            : ""
+                        }`}
+                        title={
+                          !canUserSendFriendRequest(currentUser)
+                            ? "Account restricted - cannot send friend requests"
+                            : ""
+                        }
                       >
                         <PlusIcon className="w-4 h-4" />
                         <span>

@@ -25,7 +25,6 @@ interface PageStats {
 
 const PageDashboardOverview: React.FC<PageDashboardOverviewProps> = ({
   page,
-  currentUser,
   currentUserRole,
   isOwner,
   pendingRequestsCount,

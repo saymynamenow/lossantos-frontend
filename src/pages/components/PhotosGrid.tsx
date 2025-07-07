@@ -26,6 +26,8 @@ const PhotosGrid: React.FC<PhotosGridProps> = ({
     );
   }
 
+  const url = import.meta.env.VITE_UPLOADS_URL;
+
   // Show either limited photos or all photos based on showAll prop
   const displayMedia = showAll ? media : media.slice(0, maxPhotos);
   const shouldShowMoreIndicator = !showAll && media.length > maxPhotos;
@@ -43,7 +45,7 @@ const PhotosGrid: React.FC<PhotosGridProps> = ({
           onClick={() => onImageClick?.(mediaItem)}
         >
           <img
-            src={mediaItem.url}
+            src={`${url}/${mediaItem.url}`}
             alt={`Photo ${index + 1}`}
             className="w-full h-full object-cover transition-all duration-300 group-hover:scale-110 group-hover:brightness-75"
             loading="lazy"

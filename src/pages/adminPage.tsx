@@ -89,10 +89,7 @@ export default function AdminPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
-      <NavigationBar
-        username={currentUser.username}
-        profilePicture={currentUser.profilePicture || undefined}
-      />
+      <NavigationBar />
 
       <div className="flex flex-1 pt-16">
         <AdminSidebar

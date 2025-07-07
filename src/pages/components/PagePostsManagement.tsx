@@ -10,12 +10,10 @@ interface PagePostsManagementProps {
 }
 
 const PagePostsManagement: React.FC<PagePostsManagementProps> = ({
-  pageId,
-  currentUser,
   currentUserRole,
   isOwner,
 }) => {
-  const canManagePosts = isOwner || currentUserRole === "admin";
+  isOwner || currentUserRole === "admin";
 
   return (
     <div className="space-y-6">

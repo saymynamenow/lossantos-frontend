@@ -60,6 +60,104 @@ export const userService = {
     );
     return response.data;
   },
+
+  // Update user profile
+  updateProfile: async (userId: string, profileData: { coverPhoto?: File }) => {
+    const formData = new FormData();
+
+    if (profileData.coverPhoto)
+      formData.append("coverPicture", profileData.coverPhoto);
+
+    const response = await axios.patch(
+      `${apiUrl}/users/editcover/${userId}`,
+      formData,
+      {
+        withCredentials: true,
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      }
+    );
+    return response.data;
+  },
+
+  // Update user profile fields with optional file upload
+  updateUserProfile: async (
+    userId: string,
+    profileData: {
+      username?: string;
+      name?: string;
+      bio?: string;
+      profilePicture?: string;
+      coverPicture?: string;
+      location?: string;
+      studyField?: string;
+      relationshipStatus?: string;
+      relationship?: string;
+      birthdate?: string;
+      gender?: string;
+    },
+    profilePictureFile?: File
+  ) => {
+    // If there's a file to upload, use FormData
+    if (profilePictureFile) {
+      const formData = new FormData();
+
+      // Append profile data
+      Object.entries(profileData).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          formData.append(key, value);
+        }
+      });
+
+      // Append profile picture file
+      formData.append("profilePicture", profilePictureFile);
+
+      const response = await axios.patch(
+        `${apiUrl}/users/${userId}`,
+        formData,
+        {
+          withCredentials: true,
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+      return response.data;
+    } else {
+      // If no file, use JSON
+      const response = await axios.patch(
+        `${apiUrl}/users/${userId}`,
+        profileData,
+        {
+          withCredentials: true,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+      return response.data;
+    }
+  },
+
+  // Upload profile picture
+
+  logout: async () => {
+    try {
+      const response = await axios.post(
+        `${apiUrl}/auth/logout`,
+        {},
+        {
+          withCredentials: true,
+        }
+      );
+      toast.success("Logged out successfully");
+      return response.data;
+    } catch (error) {
+      console.error("Logout failed:", error);
+      throw error;
+    }
+  },
 };
 
 export const sponsoredService = {
@@ -187,24 +285,20 @@ export const postService = {
   // Create a new post
   createPost: async (content: string, media?: File[]) => {
     const formData = new FormData();
-    formData.set("content", content);
+    formData.append("content", content);
 
-    if (media) {
+    if (media && media.length > 0) {
       media.forEach((file) => {
         formData.append("media", file);
       });
     }
 
-    const response = await axios.post(
-      `${apiUrl}/posts`,
-      {
-        content: content,
-        media: media ? media.map((file) => file.name) : [],
+    const response = await axios.post(`${apiUrl}/posts`, formData, {
+      withCredentials: true,
+      headers: {
+        "Content-Type": "multipart/form-data",
       },
-      {
-        withCredentials: true,
-      }
-    );
+    });
     return response.data;
   },
 
@@ -557,15 +651,22 @@ export const pageService = {
       media?: File[];
     }
   ) => {
+    const formData = new FormData();
+    formData.append("content", postData.content);
+
+    if (postData.media && postData.media.length > 0) {
+      postData.media.forEach((file) => {
+        formData.append("media", file);
+      });
+    }
+
     const response = await axios.post(
       `${apiUrl}/page/${pageId}/post`,
-      {
-        content: postData.content,
-      },
+      formData,
       {
         withCredentials: true,
         headers: {
-          "Content-Type": "application/json",
+          "Content-Type": "multipart/form-data",
         },
       }
     );
@@ -741,6 +842,165 @@ export const searchService = {
   },
 };
 
+// Verification services
+export const verificationService = {
+  // Submit verification request
+  submitRequest: async (requestData: {
+    requestType: "verified" | "pro";
+    reason: string;
+    documents?: File[];
+  }) => {
+    const formData = new FormData();
+    formData.append("requestType", requestData.requestType);
+    formData.append("reason", requestData.reason);
+
+    if (requestData.documents) {
+      requestData.documents.forEach((file) => {
+        formData.append("documents", file);
+      });
+    }
+
+    const response = await axios.post(
+      `${apiUrl}/verification/submit`,
+      formData,
+      {
+        withCredentials: true,
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      }
+    );
+    return response.data;
+  },
+
+  // Get current user's verification requests
+  getMyRequests: async (page: number = 1, limit: number = 10) => {
+    const response = await axios.get(
+      `${apiUrl}/verification/my-requests?page=${page}&limit=${limit}`,
+      { withCredentials: true }
+    );
+    return response.data;
+  },
+
+  // Get all verification requests (Admin only)
+  getAllRequests: async (
+    page: number = 1,
+    limit: number = 20,
+    filters?: {
+      status?: "pending" | "approved" | "rejected" | "under-review";
+      requestType?: "verified" | "pro";
+      search?: string;
+    }
+  ) => {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString(),
+    });
+
+    if (filters?.status) params.append("status", filters.status);
+    if (filters?.requestType) params.append("requestType", filters.requestType);
+    if (filters?.search) params.append("search", filters.search);
+
+    const response = await axios.get(
+      `${apiUrl}/verification/all?${params.toString()}`,
+      { withCredentials: true }
+    );
+    return response.data;
+  },
+
+  // Get verification request details
+  getRequestById: async (requestId: string) => {
+    const response = await axios.get(`${apiUrl}/verification/${requestId}`, {
+      withCredentials: true,
+    });
+    return response.data;
+  },
+
+  // Approve verification request (Admin only)
+  approveRequest: async (requestId: string, notes?: string) => {
+    const response = await axios.patch(
+      `${apiUrl}/verification/${requestId}/approve`,
+      { notes },
+      { withCredentials: true }
+    );
+    return response.data;
+  },
+
+  // Reject verification request (Admin only)
+  rejectRequest: async (
+    requestId: string,
+    rejectionReason: string,
+    notes?: string
+  ) => {
+    const response = await axios.patch(
+      `${apiUrl}/verification/${requestId}/reject`,
+      { rejectionReason, notes },
+      { withCredentials: true }
+    );
+    return response.data;
+  },
+
+  // Get verification stats overview (Admin only)
+  getStatsOverview: async () => {
+    const response = await axios.get(`${apiUrl}/verification/stats/overview`, {
+      withCredentials: true,
+    });
+    return response.data;
+  },
+
+  // Update request status to under review (Admin only)
+  setUnderReview: async (requestId: string, notes?: string) => {
+    const response = await axios.patch(
+      `${apiUrl}/verification/${requestId}/under-review`,
+      { notes },
+      { withCredentials: true }
+    );
+    return response.data;
+  },
+};
+
+// Boosted Posts Service
+export const boostedPostsService = {
+  // Get boosted posts stats
+  getStats: async () => {
+    const response = await axios.get(`${apiUrl}/boosted-posts/stats`, {
+      withCredentials: true,
+    });
+    return response.data;
+  },
+
+  // Boost a post
+  boostPost: async (postId: string, endDate: Date) => {
+    const response = await axios.post(
+      `${apiUrl}/boosted-posts/`,
+      {
+        postId,
+        endDate,
+      },
+      {
+        withCredentials: true,
+      }
+    );
+    return response.data;
+  },
+
+  // Get user's boosted posts
+  getMyBoosts: async () => {
+    const response = await axios.get(`${apiUrl}/boosted-posts/my-boosts`, {
+      withCredentials: true,
+    });
+    return response.data;
+  },
+
+  // Get all boosted posts (for timeline)
+  getAllBoostedPosts: async () => {
+    const response = await axios.get(`${apiUrl}/boosted-posts/`, {
+      withCredentials: true,
+    });
+    return response.data;
+  },
+};
+
 // Export all services
 export const apiService = {
   user: userService,
@@ -752,6 +1012,8 @@ export const apiService = {
   page: pageService,
   notification: notificationService,
   search: searchService,
+  verification: verificationService,
+  boostedPosts: boostedPostsService,
 };
 
 export default apiService;

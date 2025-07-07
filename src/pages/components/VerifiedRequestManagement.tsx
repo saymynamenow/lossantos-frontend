@@ -10,6 +10,7 @@ import {
 } from "@radix-ui/react-icons";
 import { formatDistanceToNow } from "date-fns";
 import UserBadges from "./UserBadges";
+import apiService from "../../services/api";
 
 interface VerificationRequest {
   id: string;
@@ -29,7 +30,7 @@ interface VerificationRequest {
   };
   requestType: "verified" | "pro";
   status: "pending" | "approved" | "rejected" | "under-review";
-  submittedAt: string;
+  createdAt: string;
   reviewedAt?: string;
   reviewedBy?: {
     id: string;
@@ -53,157 +54,47 @@ export default function VerifiedRequestManagement() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterType, setFilterType] = useState<string>("all");
+  const [stats, setStats] = useState<{
+    pending: number;
+    underReview: number;
+    approvedToday: number;
+    totalVerified: number;
+  }>({
+    pending: 0,
+    underReview: 0,
+    approvedToday: 0,
+    totalVerified: 0,
+  });
 
   useEffect(() => {
     fetchRequests();
+    fetchStats();
   }, []);
 
   const fetchRequests = async () => {
     try {
       setLoading(true);
-      // Simulate API call - replace with actual API
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      const mockRequests: VerificationRequest[] = [
-        {
-          id: "1",
-          user: {
-            id: "user1",
-            username: "celebrity_user",
-            name: "Famous Celebrity",
-            email: "celebrity@example.com",
-            isVerified: false,
-            stats: {
-              posts: 156,
-              followers: 45000,
-              following: 234,
-            },
-          },
-          requestType: "verified",
-          status: "pending",
-          submittedAt: new Date(
-            Date.now() - 2 * 24 * 60 * 60 * 1000
-          ).toISOString(),
-          reason:
-            "I am a public figure and content creator with a large following.",
-          documents: [
-            {
-              id: "doc1",
-              type: "id",
-              filename: "government_id.pdf",
-              url: "#",
-            },
-            {
-              id: "doc2",
-              type: "media",
-              filename: "media_coverage.pdf",
-              url: "#",
-            },
-          ],
-        },
-        {
-          id: "2",
-          user: {
-            id: "user2",
-            username: "business_owner",
-            name: "Business Owner",
-            email: "business@company.com",
-            isVerified: false,
-            isPro: false,
-            stats: {
-              posts: 89,
-              followers: 12000,
-              following: 456,
-            },
-          },
-          requestType: "pro",
-          status: "under-review",
-          submittedAt: new Date(
-            Date.now() - 5 * 24 * 60 * 60 * 1000
-          ).toISOString(),
-          reason:
-            "I run a legitimate business and need pro features for marketing.",
-          documents: [
-            {
-              id: "doc3",
-              type: "business",
-              filename: "business_license.pdf",
-              url: "#",
-            },
-          ],
-          reviewedBy: {
-            id: "admin1",
-            username: "admin",
-            name: "Admin User",
-          },
-        },
-        {
-          id: "3",
-          user: {
-            id: "user3",
-            username: "influencer_user",
-            name: "Social Influencer",
-            email: "influencer@example.com",
-            isVerified: true,
-            stats: {
-              posts: 234,
-              followers: 78000,
-              following: 123,
-            },
-          },
-          requestType: "verified",
-          status: "approved",
-          submittedAt: new Date(
-            Date.now() - 10 * 24 * 60 * 60 * 1000
-          ).toISOString(),
-          reviewedAt: new Date(
-            Date.now() - 7 * 24 * 60 * 60 * 1000
-          ).toISOString(),
-          reason: "Verified social media influencer with authentic following.",
-          reviewedBy: {
-            id: "admin1",
-            username: "admin",
-            name: "Admin User",
-          },
-        },
-        {
-          id: "4",
-          user: {
-            id: "user4",
-            username: "fake_account",
-            name: "Suspicious User",
-            email: "fake@example.com",
-            isVerified: false,
-            stats: {
-              posts: 5,
-              followers: 100,
-              following: 50,
-            },
-          },
-          requestType: "verified",
-          status: "rejected",
-          submittedAt: new Date(
-            Date.now() - 15 * 24 * 60 * 60 * 1000
-          ).toISOString(),
-          reviewedAt: new Date(
-            Date.now() - 12 * 24 * 60 * 60 * 1000
-          ).toISOString(),
-          reason: "I am a famous person.",
-          rejectionReason:
-            "Unable to verify identity. Insufficient documentation provided.",
-          reviewedBy: {
-            id: "admin1",
-            username: "admin",
-            name: "Admin User",
-          },
-        },
-      ];
-
-      setRequests(mockRequests);
+      const response = await apiService.verification.getAllRequests(1, 50, {
+        status: filterStatus !== "all" ? (filterStatus as any) : undefined,
+        requestType: filterType !== "all" ? (filterType as any) : undefined,
+        search: searchTerm || undefined,
+      });
+      setRequests(response.requests || response.data || []);
     } catch (error) {
       console.error("Failed to fetch verification requests", error);
+      // Fallback to mock data if API fails
+      setRequests([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchStats = async () => {
+    try {
+      const response = await apiService.verification.getStatsOverview();
+      setStats(response);
+    } catch (error) {
+      console.error("Failed to fetch verification stats", error);
     }
   };
 
@@ -251,6 +142,15 @@ export default function VerifiedRequestManagement() {
     rejectionReason?: string
   ) => {
     try {
+      if (newStatus === "approved") {
+        await apiService.verification.approveRequest(requestId);
+      } else if (newStatus === "rejected" && rejectionReason) {
+        await apiService.verification.rejectRequest(requestId, rejectionReason);
+      } else if (newStatus === "under-review") {
+        await apiService.verification.setUnderReview(requestId);
+      }
+
+      // Update local state optimistically
       setRequests((prev) =>
         prev.map((request) =>
           request.id === requestId
@@ -268,9 +168,34 @@ export default function VerifiedRequestManagement() {
             : request
         )
       );
-      // TODO: Call API to update verification request status
+
+      // Refresh stats after status change
+      fetchStats();
     } catch (error) {
       console.error("Failed to update verification request status", error);
+      // You might want to show a toast notification here
+    }
+  };
+
+  // Add effect to refetch when filters change
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      fetchRequests();
+    }, 300); // Debounce search by 300ms
+
+    return () => clearTimeout(timeoutId);
+  }, [filterStatus, filterType, searchTerm]);
+
+  const handleViewDetails = async (requestId: string) => {
+    try {
+      const requestDetails = await apiService.verification.getRequestById(
+        requestId
+      );
+      // You can implement a modal or detailed view here
+      console.log("Request details:", requestDetails);
+      // For now, just log the details. You might want to show them in a modal
+    } catch (error) {
+      console.error("Failed to fetch request details", error);
     }
   };
 
@@ -307,36 +232,17 @@ export default function VerifiedRequestManagement() {
         {[
           {
             title: "Pending Review",
-            value: requests
-              .filter((r) => r.status === "pending")
-              .length.toString(),
+            value: stats.pending,
             color: "yellow",
           },
           {
-            title: "Under Review",
-            value: requests
-              .filter((r) => r.status === "under-review")
-              .length.toString(),
-            color: "blue",
-          },
-          {
             title: "Approved Today",
-            value: requests
-              .filter(
-                (r) =>
-                  r.status === "approved" &&
-                  r.reviewedAt &&
-                  new Date(r.reviewedAt).toDateString() ===
-                    new Date().toDateString()
-              )
-              .length.toString(),
+            value: stats.approvedToday,
             color: "green",
           },
           {
             title: "Verification Requests",
-            value: requests
-              .filter((r) => r.requestType === "verified")
-              .length.toString(),
+            value: stats.totalVerified,
             color: "blue",
           },
         ].map((stat, index) => (
@@ -402,8 +308,17 @@ export default function VerifiedRequestManagement() {
             <div key={request.id} className="bg-white rounded-lg shadow-md p-6">
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-start space-x-4 flex-1">
-                  <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center">
-                    <PersonIcon className="w-6 h-6 text-gray-500" />
+                  <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
+                    {request.user.profilePicture &&
+                    request.user.profilePicture !== "null" ? (
+                      <img
+                        src={request.user.profilePicture}
+                        alt={request.user.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <PersonIcon className="w-6 h-6 text-gray-500" />
+                    )}
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center space-x-3 mb-2">
@@ -480,29 +395,31 @@ export default function VerifiedRequestManagement() {
                       </div>
                     )}
 
-                    {request.documents && request.documents.length > 0 && (
-                      <div className="mb-4">
-                        <span className="font-medium text-gray-500 text-sm">
-                          Documents:
-                        </span>
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          {request.documents.map((doc) => (
-                            <div
-                              key={doc.id}
-                              className="flex items-center space-x-2 px-3 py-1 bg-gray-100 rounded-lg text-sm"
-                            >
-                              <FileTextIcon className="w-4 h-4 text-gray-500" />
-                              <span className="text-gray-700">
-                                {doc.filename}
-                              </span>
-                              <span className="text-xs text-gray-500 capitalize">
-                                ({doc.type})
-                              </span>
-                            </div>
-                          ))}
+                    {request.documents &&
+                      Array.isArray(request.documents) &&
+                      request.documents.length > 0 && (
+                        <div className="mb-4">
+                          <span className="font-medium text-gray-500 text-sm">
+                            Documents:
+                          </span>
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {request.documents.map((doc) => (
+                              <div
+                                key={doc.id}
+                                className="flex items-center space-x-2 px-3 py-1 bg-gray-100 rounded-lg text-sm"
+                              >
+                                <FileTextIcon className="w-4 h-4 text-gray-500" />
+                                <span className="text-gray-700">
+                                  {doc.filename}
+                                </span>
+                                <span className="text-xs text-gray-500 capitalize">
+                                  ({doc.type})
+                                </span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
 
                     {request.rejectionReason && (
                       <div className="p-3 bg-red-50 rounded-lg mb-4">
@@ -519,6 +436,7 @@ export default function VerifiedRequestManagement() {
 
                 <div className="flex items-center space-x-2 ml-4">
                   <button
+                    onClick={() => handleViewDetails(request.id)}
                     className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                     title="View Details"
                   >
@@ -558,7 +476,7 @@ export default function VerifiedRequestManagement() {
               <div className="flex items-center justify-between pt-4 border-t border-gray-200 text-sm text-gray-600">
                 <span>
                   Submitted{" "}
-                  {formatDistanceToNow(new Date(request.submittedAt), {
+                  {formatDistanceToNow(new Date(request.createdAt), {
                     addSuffix: true,
                   })}
                 </span>

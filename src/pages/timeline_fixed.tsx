@@ -1,6 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import axios from "axios";
-import type { Post } from "../type";
+import type { Post, User } from "../type";
 import PostDetailModal from "./components/PostDetailModal";
 import PostFeed from "./components/PostFeed";
 import Sidebar from "./components/Sidebar";
@@ -11,12 +10,7 @@ import apiService from "../services/api";
 export default function Timeline() {
   const [timelineData, setTimelineData] = useState<Post[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
-  const [currentUser, setCurrentUser] = useState<{
-    id: string;
-    name: string;
-    username: string;
-    profilePicture?: string;
-  } | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [modalPost, setModalPost] = useState<Post | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -28,18 +22,11 @@ export default function Timeline() {
   useEffect(() => {
     const fetchCurrentUser = async () => {
       try {
-        const response = await axios.get(`${apiUrl}/auth/me`, {
-          withCredentials: true,
-        });
-        setCurrentUser({
-          id: response.data.id,
-          name: response.data.name,
-          username: response.data.username,
-          profilePicture: response.data.profilePicture || "",
-        });
+        const response = await apiService.user.getCurrentUser();
+        setCurrentUser(response);
       } catch (error) {
         console.error("Failed to fetch current user", error);
-        setCurrentUser({ id: "temp-user", name: "You", username: "temp-user" });
+        setCurrentUser(null);
       }
     };
     fetchCurrentUser();
@@ -51,11 +38,53 @@ export default function Timeline() {
       if (!hasInitialized.current) {
         hasInitialized.current = true;
         try {
-          // Use combined timeline endpoint that includes both regular posts and followed page posts
-          const res = await apiService.post.getTimelinePosts(1, 5);
-          console.log("Timeline: Initial posts fetched:", res);
-          setTimelineData(res.post || []);
-          setHasMore(res.post && res.post.length === 5);
+          // Fetch both regular posts and boosted posts
+          const [timelineRes, boostedRes] = await Promise.all([
+            apiService.post.getTimelinePosts(1, 5),
+            apiService.boostedPosts.getAllBoostedPosts().catch((error) => {
+              console.error("Failed to fetch boosted posts:", error);
+              return { data: [] };
+            }),
+          ]);
+
+          const regularPosts = timelineRes.post || [];
+          const boostedPosts = boostedRes.data || boostedRes.boostedPosts || [];
+
+          // Temporary fallback: if no boosted posts from API, create a mock one for testing
+          const finalBoostedPosts = boostedPosts;
+
+          console.log("Timeline Debug:");
+          console.log("Regular posts:", regularPosts.length);
+          console.log("Boosted posts:", finalBoostedPosts.length);
+          console.log("Boosted posts data:", finalBoostedPosts);
+
+          // Combine and sort posts by date, with boosted posts getting priority
+          const allPosts = [
+            ...regularPosts,
+            ...finalBoostedPosts.map((bp: any) => ({
+              ...bp.post,
+              isBoosted: true,
+              boostedAt: bp.boostedAt,
+            })),
+          ];
+
+          // Sort by date (newest first), but prioritize boosted posts
+          const sortedPosts = allPosts.sort((a: any, b: any) => {
+            if (a.isBoosted && !b.isBoosted) return -1;
+            if (!a.isBoosted && b.isBoosted) return 1;
+            return (
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            );
+          });
+
+          console.log("Final sorted posts:", sortedPosts.length);
+          console.log(
+            "Posts with boosted flags:",
+            sortedPosts.filter((p) => p.isBoosted)
+          );
+
+          setTimelineData(sortedPosts);
+          setHasMore(regularPosts.length === 5);
           setPage(2); // Next page to fetch
         } catch (error) {
           console.error("Failed to fetch initial posts", error);
@@ -74,16 +103,43 @@ export default function Timeline() {
 
     setLoadingMore(true);
     try {
-      // Use combined timeline endpoint for loading more posts
-      const res = await apiService.post.getTimelinePosts(page, 5);
+      // Fetch both regular posts and boosted posts for pagination
+      const [timelineRes, boostedRes] = await Promise.all([
+        apiService.post.getTimelinePosts(page, 5),
+        apiService.boostedPosts
+          .getAllBoostedPosts()
+          .catch(() => ({ data: [] })),
+      ]);
 
-      const newPosts = res.post || [];
+      const newPosts = timelineRes.post || [];
+      const newBoostedPosts = boostedRes.data || boostedRes.boostedPosts || [];
+
+      // Combine new posts with boosted posts
+      const allNewPosts = [
+        ...newPosts,
+        ...newBoostedPosts.map((bp: any) => ({
+          ...bp.post,
+          isBoosted: true,
+          boostedAt: bp.boostedAt,
+        })),
+      ];
+
       setTimelineData((prev) => {
         const existingIds = new Set(prev.map((p) => p.id));
-        const uniqueNewPosts = newPosts.filter(
+        const uniqueNewPosts = allNewPosts.filter(
           (post: Post) => !existingIds.has(post.id)
         );
-        return [...prev, ...uniqueNewPosts];
+
+        // Sort new posts by date, prioritizing boosted posts
+        const sortedNewPosts = uniqueNewPosts.sort((a: any, b: any) => {
+          if (a.isBoosted && !b.isBoosted) return -1;
+          if (!a.isBoosted && b.isBoosted) return 1;
+          return (
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
+        });
+
+        return [...prev, ...sortedNewPosts];
       });
 
       setHasMore(newPosts.length === 5);
@@ -111,6 +167,58 @@ export default function Timeline() {
     );
     if (modalPost && modalPost.id === updatedPost.id) {
       setModalPost(updatedPost);
+    }
+  };
+
+  // Refresh posts data (called after creating a new post)
+  const refreshPosts = async () => {
+    try {
+      // Fetch both regular posts and boosted posts
+      const [timelineRes, boostedRes] = await Promise.all([
+        apiService.post.getTimelinePosts(1, 5),
+        apiService.boostedPosts.getAllBoostedPosts().catch((error) => {
+          console.error("Failed to fetch boosted posts:", error);
+          return { data: [] };
+        }),
+      ]);
+
+      const regularPosts = timelineRes.post || [];
+      const boostedPosts = boostedRes.data || boostedRes.boostedPosts || [];
+
+      console.log("Refreshing posts:");
+      console.log("Regular posts:", regularPosts.length);
+      console.log("Boosted posts:", boostedPosts.length);
+
+      // Combine and sort posts by date, with boosted posts getting priority
+      const allPosts = [
+        ...regularPosts,
+        ...boostedPosts.map((bp: any) => ({
+          ...bp.post,
+          isBoosted: true,
+          boostedAt: bp.boostedAt,
+        })),
+      ];
+
+      // Sort by date (newest first), but prioritize boosted posts
+      const sortedPosts = allPosts.sort((a: any, b: any) => {
+        if (a.isBoosted && !b.isBoosted) return -1;
+        if (!a.isBoosted && b.isBoosted) return 1;
+        return (
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+      });
+
+      console.log("Refreshed posts:", sortedPosts.length);
+      console.log(
+        "Posts with boosted flags:",
+        sortedPosts.filter((p) => p.isBoosted)
+      );
+
+      setTimelineData(sortedPosts);
+      setHasMore(regularPosts.length === 5);
+      setPage(2); // Reset to next page
+    } catch (error) {
+      console.error("Failed to refresh posts", error);
     }
   };
 
@@ -146,14 +254,7 @@ export default function Timeline() {
               userId: currentUser.id,
               postId: postId,
               createdAt: new Date().toISOString(),
-              user: {
-                ...currentUser,
-                email: "",
-                password: "",
-                isVerified: false,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-              },
+              user: currentUser,
             });
           }
 
@@ -162,7 +263,6 @@ export default function Timeline() {
         return post;
       });
 
-      console.log("Timeline: Optimistically updating posts:", optimisticPosts);
       setTimelineData(optimisticPosts);
 
       // Update modal immediately if it's open and showing the same post
@@ -176,46 +276,72 @@ export default function Timeline() {
         postId,
         reactionType
       );
-      console.log("Timeline: API reaction response:", response);
 
       // Update with real data from server
-      if (response) {
+      if (response && response.post) {
+        const originalPost = optimisticPosts.find((p) => p.id === postId);
+        const updatedPost = {
+          ...response.post,
+          reactions: response.post.reactions || response.post.Reaction || [],
+          ...(originalPost && (originalPost as any).isBoosted
+            ? { isBoosted: true }
+            : {}),
+        };
+
         const serverUpdatedPosts = optimisticPosts.map((post) =>
-          post.id === response.id ? response : post
+          post.id === postId ? updatedPost : post
         );
-        console.log("Timeline: Updating with server data:", serverUpdatedPosts);
         setTimelineData(serverUpdatedPosts);
 
         // Update modal with server data if it's showing the same post
-        if (modalPost && modalPost.id === response.id) {
-          setModalPost(response);
+        if (modalPost && modalPost.id === postId) {
+          setModalPost(updatedPost);
         }
       }
     } catch (error) {
       console.error("Timeline: Failed to react to post", error);
-      // Revert optimistic update on error
-      setTimelineData(timelineData);
-      if (modalPost && modalPost.id === postId) {
-        const originalPost = timelineData.find((p) => p.id === postId);
-        if (originalPost) {
-          setModalPost(originalPost);
-        }
-      }
+      // Don't revert optimistic update on error - let the user try again
+      // The optimistic update will stay in place, providing better UX
     }
   };
 
   return (
     <div className="">
-      <NavigationBar
-        username={currentUser?.username}
-        profilePicture={currentUser?.profilePicture}
-      />
+      <NavigationBar />
 
       <div className="min-h-screen bg-gray-100 flex">
         <Sidebar />
 
         {/* Timeline Feed */}
         <div className="w-full max-w-3xl mx-20 my-12 relative z-20">
+          {/* Debug Info - Remove this in production */}
+          {!initialLoading && (
+            <div className="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200 text-sm">
+              <div className="font-semibold text-blue-800 mb-2">
+                🚀 Timeline Debug Info:
+              </div>
+              <div className="text-blue-700 space-y-1">
+                <div>
+                  <strong>Total posts:</strong> {timelineData.length}
+                </div>
+                <div>
+                  <strong>Boosted posts:</strong>{" "}
+                  {timelineData.filter((p) => (p as any).isBoosted).length}
+                </div>
+                <div>
+                  <strong>Regular posts:</strong>{" "}
+                  {timelineData.filter((p) => !(p as any).isBoosted).length}
+                </div>
+                {timelineData.filter((p) => (p as any).isBoosted).length >
+                  0 && (
+                  <div className="text-green-600 font-medium">
+                    ✅ Boosted posts are displaying!
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {initialLoading ? (
             // Show loading skeleton while initially loading
             <div className="space-y-8">
@@ -302,6 +428,8 @@ export default function Timeline() {
               onLoadMore={handleLoadMore}
               hasMore={hasMore}
               isLoading={loadingMore}
+              showBoostedPosts={true}
+              onRefreshPosts={refreshPosts}
             />
           )}
         </div>

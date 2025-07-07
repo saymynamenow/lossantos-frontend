@@ -11,6 +11,16 @@ import FriendsSection from "./components/FriendsSection";
 import UserBadges from "./components/UserBadges";
 import type { Post, Media } from "../type";
 import apiService from "../services/api";
+import {
+  canUserSendFriendRequest,
+  canUserFollowUser,
+  canUserSendMessage,
+  canUserAcceptFriendRequest,
+  canUserRejectFriendRequest,
+  canUserUnfriend,
+  canUserCancelFriendRequest,
+} from "../utils/accountStatus";
+import { AccountStatusWarning } from "../components/AccountStatusWarning";
 
 export default function ProfilePage() {
   const navigate = useNavigate();
@@ -49,7 +59,18 @@ export default function ProfilePage() {
   const [isFollowing, setIsFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
 
+  // Cover photo edit state
+  const [showCoverPhotoModal, setShowCoverPhotoModal] = useState(false);
+  const [selectedCoverPhoto, setSelectedCoverPhoto] = useState<File | null>(
+    null
+  );
+  const [coverPhotoPreview, setCoverPhotoPreview] = useState<string | null>(
+    null
+  );
+  const [coverPhotoLoading, setCoverPhotoLoading] = useState(false);
+
   const apiUrl = import.meta.env.VITE_API_URL;
+  const url = import.meta.env.VITE_UPLOADS_URL;
 
   // Fetch logged-in user for navigation
   useEffect(() => {
@@ -289,11 +310,8 @@ export default function ProfilePage() {
       }
     } catch (error) {
       console.error("Failed to react to post", error);
-      // Revert optimistic update on error
-      setPosts(posts);
-      if (modalPost && modalPost.id === postId) {
-        setModalPost(modalPost);
-      }
+      // Don't revert optimistic update on error - let the user try again
+      // The optimistic update will stay in place, providing better UX
     }
   };
   // Handle comment toggle
@@ -338,7 +356,12 @@ export default function ProfilePage() {
 
   // Friend action handlers
   const handleSendFriendRequest = async () => {
-    if (!currentUser || !loggedInUser) return;
+    if (
+      !currentUser ||
+      !loggedInUser ||
+      !canUserSendFriendRequest(loggedInUser)
+    )
+      return;
 
     try {
       setFriendshipLoading(true);
@@ -365,7 +388,11 @@ export default function ProfilePage() {
   };
 
   const handleAcceptFriendRequest = async () => {
-    if (!friendshipStatus?.friendship?.id) return;
+    if (
+      !friendshipStatus?.friendship?.id ||
+      !canUserAcceptFriendRequest(loggedInUser)
+    )
+      return;
 
     try {
       setFriendshipLoading(true);
@@ -390,7 +417,11 @@ export default function ProfilePage() {
   };
 
   const handleRejectFriendRequest = async () => {
-    if (!friendshipStatus?.friendship?.id) return;
+    if (
+      !friendshipStatus?.friendship?.id ||
+      !canUserRejectFriendRequest(loggedInUser)
+    )
+      return;
 
     try {
       setFriendshipLoading(true);
@@ -410,18 +441,21 @@ export default function ProfilePage() {
   };
 
   const handleRemoveFriend = async () => {
+    if (!canUserUnfriend(loggedInUser)) return;
     // Show confirmation modal instead of directly removing
     setShowUnfriendModal(true);
   };
 
   const handleCancelFriendRequest = async () => {
+    if (!canUserCancelFriendRequest(loggedInUser)) return;
     // Show confirmation modal instead of directly canceling
     setShowCancelRequestModal(true);
   };
 
   // Confirm unfriend action
   const confirmUnfriend = async () => {
-    if (!friendshipStatus?.friendship?.id) return;
+    if (!friendshipStatus?.friendship?.id || !canUserUnfriend(loggedInUser))
+      return;
 
     try {
       setFriendshipLoading(true);
@@ -453,7 +487,11 @@ export default function ProfilePage() {
 
   // Confirm cancel friend request action
   const confirmCancelRequest = async () => {
-    if (!friendshipStatus?.friendship?.id) return;
+    if (
+      !friendshipStatus?.friendship?.id ||
+      !canUserCancelFriendRequest(loggedInUser)
+    )
+      return;
 
     try {
       setFriendshipLoading(true);
@@ -516,6 +554,83 @@ export default function ProfilePage() {
     }
   };
 
+  // Cover photo handlers
+  const handleCoverPhotoClick = () => {
+    if (isOwnProfile()) {
+      setShowCoverPhotoModal(true);
+    }
+  };
+
+  const handleCoverPhotoUpload = (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith("image/")) {
+        alert("Please select a valid image file");
+        return;
+      }
+
+      // Validate file size (max 10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        alert("File size must be less than 10MB");
+        return;
+      }
+
+      setSelectedCoverPhoto(file);
+
+      // Create preview URL
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setCoverPhotoPreview(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSaveCoverPhoto = async () => {
+    if (!selectedCoverPhoto || !currentUser) return;
+
+    try {
+      setCoverPhotoLoading(true);
+
+      // Create FormData for upload
+      const formData = new FormData();
+      formData.append("coverPhoto", selectedCoverPhoto);
+
+      // Update user profile with new cover photo
+      console.log("current user", currentUser);
+      const response = await apiService.user.updateProfile(currentUser.id, {
+        coverPhoto: selectedCoverPhoto,
+      });
+
+      // Update current user state with new cover photo
+      setCurrentUser((prev: any) => ({
+        ...prev,
+        coverPicture: response.coverPicture,
+      }));
+
+      // Close modal and reset state
+      setShowCoverPhotoModal(false);
+      setSelectedCoverPhoto(null);
+      setCoverPhotoPreview(null);
+
+      console.log("Cover photo updated successfully");
+    } catch (error) {
+      console.error("Failed to update cover photo:", error);
+      alert("Failed to update cover photo. Please try again.");
+    } finally {
+      setCoverPhotoLoading(false);
+    }
+  };
+
+  const handleCancelCoverPhoto = () => {
+    setShowCoverPhotoModal(false);
+    setSelectedCoverPhoto(null);
+    setCoverPhotoPreview(null);
+  };
+
   // Close modal when clicking outside
   const handleModalBackdropClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {
@@ -538,6 +653,18 @@ export default function ProfilePage() {
 
     if (!friendshipStatus) {
       // No friendship exists - show Add Friend button
+      if (!canUserSendFriendRequest(loggedInUser)) {
+        return (
+          <button
+            disabled
+            className="bg-gray-400 text-white px-6 py-2 rounded-lg font-medium cursor-not-allowed"
+            title="Account restricted - cannot send friend requests"
+          >
+            👤 Add Friend
+          </button>
+        );
+      }
+
       return (
         <button
           onClick={handleSendFriendRequest}
@@ -555,7 +682,17 @@ export default function ProfilePage() {
         return (
           <button
             onClick={handleRemoveFriend}
-            className="bg-green-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-green-700 transition"
+            disabled={!canUserUnfriend(loggedInUser)}
+            className={`px-6 py-2 rounded-lg font-medium transition ${
+              canUserUnfriend(loggedInUser)
+                ? "bg-green-600 text-white hover:bg-green-700"
+                : "bg-gray-400 text-gray-200 cursor-not-allowed"
+            }`}
+            title={
+              !canUserUnfriend(loggedInUser)
+                ? "Account restricted - cannot unfriend users"
+                : ""
+            }
           >
             ✓ Friends
           </button>
@@ -571,7 +708,17 @@ export default function ProfilePage() {
           return (
             <button
               onClick={handleCancelFriendRequest}
-              className="bg-yellow-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-yellow-700 transition"
+              disabled={!canUserCancelFriendRequest(loggedInUser)}
+              className={`px-6 py-2 rounded-lg font-medium transition ${
+                canUserCancelFriendRequest(loggedInUser)
+                  ? "bg-yellow-600 text-white hover:bg-yellow-700"
+                  : "bg-gray-400 text-gray-200 cursor-not-allowed"
+              }`}
+              title={
+                !canUserCancelFriendRequest(loggedInUser)
+                  ? "Account restricted - cannot cancel friend requests"
+                  : ""
+              }
             >
               ⏳ Request Sent
             </button>
@@ -586,13 +733,33 @@ export default function ProfilePage() {
             <div className="flex space-x-2">
               <button
                 onClick={handleAcceptFriendRequest}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition"
+                disabled={!canUserAcceptFriendRequest(loggedInUser)}
+                className={`px-4 py-2 rounded-lg font-medium transition ${
+                  canUserAcceptFriendRequest(loggedInUser)
+                    ? "bg-blue-600 text-white hover:bg-blue-700"
+                    : "bg-gray-400 text-gray-200 cursor-not-allowed"
+                }`}
+                title={
+                  !canUserAcceptFriendRequest(loggedInUser)
+                    ? "Account restricted - cannot accept friend requests"
+                    : ""
+                }
               >
                 ✓ Accept
               </button>
               <button
                 onClick={handleRejectFriendRequest}
-                className="bg-gray-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-gray-700 transition"
+                disabled={!canUserRejectFriendRequest(loggedInUser)}
+                className={`px-4 py-2 rounded-lg font-medium transition ${
+                  canUserRejectFriendRequest(loggedInUser)
+                    ? "bg-gray-600 text-white hover:bg-gray-700"
+                    : "bg-gray-400 text-gray-200 cursor-not-allowed"
+                }`}
+                title={
+                  !canUserRejectFriendRequest(loggedInUser)
+                    ? "Account restricted - cannot reject friend requests"
+                    : ""
+                }
               >
                 ✗ Decline
               </button>
@@ -603,7 +770,17 @@ export default function ProfilePage() {
           return (
             <button
               onClick={handleCancelFriendRequest}
-              className="bg-yellow-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-yellow-700 transition"
+              disabled={!canUserCancelFriendRequest(loggedInUser)}
+              className={`px-6 py-2 rounded-lg font-medium transition ${
+                canUserCancelFriendRequest(loggedInUser)
+                  ? "bg-yellow-600 text-white hover:bg-yellow-700"
+                  : "bg-gray-400 text-gray-200 cursor-not-allowed"
+              }`}
+              title={
+                !canUserCancelFriendRequest(loggedInUser)
+                  ? "Account restricted - cannot cancel friend requests"
+                  : ""
+              }
             >
               ⏳ Pending
             </button>
@@ -615,7 +792,17 @@ export default function ProfilePage() {
         return (
           <button
             onClick={handleSendFriendRequest}
-            className="bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 transition"
+            disabled={!canUserSendFriendRequest(loggedInUser)}
+            className={`px-6 py-2 rounded-lg font-medium transition ${
+              canUserSendFriendRequest(loggedInUser)
+                ? "bg-blue-600 text-white hover:bg-blue-700"
+                : "bg-gray-400 text-gray-200 cursor-not-allowed"
+            }`}
+            title={
+              !canUserSendFriendRequest(loggedInUser)
+                ? "Account restricted - cannot send friend requests"
+                : ""
+            }
           >
             👤 Add Friend
           </button>
@@ -625,7 +812,17 @@ export default function ProfilePage() {
         return (
           <button
             onClick={handleSendFriendRequest}
-            className="bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 transition"
+            disabled={!canUserSendFriendRequest(loggedInUser)}
+            className={`px-6 py-2 rounded-lg font-medium transition ${
+              canUserSendFriendRequest(loggedInUser)
+                ? "bg-blue-600 text-white hover:bg-blue-700"
+                : "bg-gray-400 text-gray-200 cursor-not-allowed"
+            }`}
+            title={
+              !canUserSendFriendRequest(loggedInUser)
+                ? "Account restricted - cannot send friend requests"
+                : ""
+            }
           >
             👤 Add Friend
           </button>
@@ -647,10 +844,7 @@ export default function ProfilePage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-100">
-        <NavigationBar
-          username={loggedInUser?.username}
-          profilePicture={loggedInUser?.profilePicture}
-        />
+        <NavigationBar />
         <div className="flex items-center justify-center min-h-[60vh]">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
@@ -665,10 +859,7 @@ export default function ProfilePage() {
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-gray-100">
-        <NavigationBar
-          username={loggedInUser?.username}
-          profilePicture={loggedInUser?.profilePicture}
-        />
+        <NavigationBar />
         <div className="flex items-center justify-center min-h-[60vh]">
           <div className="text-center">
             <FaceIcon
@@ -696,16 +887,13 @@ export default function ProfilePage() {
 
   return (
     <div className="min-h-screen bg-gray-100">
-      <NavigationBar
-        username={loggedInUser?.username}
-        profilePicture={loggedInUser?.profilePicture}
-      />
+      <NavigationBar />
       {/* Cover Photo Section */}
       <div className="relative">
         <div className="h-96 w-full bg-black relative overflow-hidden">
           {currentUser?.coverPicture && (
             <img
-              src={currentUser.coverPicture}
+              src={`${url}/${currentUser.coverPicture}`}
               alt="Cover"
               className="w-full h-full object-cover"
             />
@@ -717,7 +905,7 @@ export default function ProfilePage() {
           <div className="w-40 h-40 rounded-full border-4 border-white bg-gray-200 overflow-hidden shadow-xl">
             {currentUser?.profilePicture ? (
               <img
-                src={currentUser.profilePicture}
+                src={`${url}/${currentUser.profilePicture}`}
                 alt={currentUser?.name || "User"}
                 className="w-full h-full object-cover"
               />
@@ -729,11 +917,16 @@ export default function ProfilePage() {
           </div>
         </div>
         {/* Edit Cover Photo Button */}
-        <button className="absolute bottom-4 right-4 bg-white px-4 py-2 rounded-lg shadow-md hover:bg-gray-50 transition">
-          <span className="ml-2 text-sm font-medium text-black">
-            Edit Cover Photo
-          </span>
-        </button>
+        {isOwnProfile() && (
+          <button
+            onClick={handleCoverPhotoClick}
+            className="absolute bottom-4 right-4 bg-white px-4 py-2 rounded-lg shadow-md hover:bg-gray-50 transition"
+          >
+            <span className="ml-2 text-sm font-medium text-black">
+              Edit Cover Photo
+            </span>
+          </button>
+        )}
       </div>
       {/* Profile Header */}
       <div className="bg-white pt-24 pb-4 shadow-sm">
@@ -772,7 +965,10 @@ export default function ProfilePage() {
                   <button className="bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 transition">
                     Add to Story
                   </button>
-                  <button className="bg-gray-200 text-gray-800 px-6 py-2 rounded-lg font-medium hover:bg-gray-300 transition">
+                  <button
+                    onClick={() => navigate("/settings")}
+                    className="bg-gray-200 text-gray-800 px-6 py-2 rounded-lg font-medium hover:bg-gray-300 transition"
+                  >
                     Edit Profile
                   </button>
                 </>
@@ -786,6 +982,14 @@ export default function ProfilePage() {
                       className="bg-gray-400 text-white px-6 py-2 rounded-lg font-medium cursor-not-allowed"
                     >
                       Loading...
+                    </button>
+                  ) : !canUserFollowUser(loggedInUser) ? (
+                    <button
+                      disabled
+                      className="bg-gray-400 text-white px-6 py-2 rounded-lg font-medium cursor-not-allowed"
+                      title="Account restricted - cannot follow users"
+                    >
+                      👁️ Follow
                     </button>
                   ) : isFollowing ? (
                     <button
@@ -807,7 +1011,19 @@ export default function ProfilePage() {
                   {getFriendButton()}
 
                   {/* Message Button */}
-                  <button className="bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 transition">
+                  <button
+                    disabled={!canUserSendMessage(loggedInUser)}
+                    className={`px-6 py-2 rounded-lg font-medium transition ${
+                      canUserSendMessage(loggedInUser)
+                        ? "bg-blue-600 text-white hover:bg-blue-700"
+                        : "bg-gray-400 text-gray-200 cursor-not-allowed"
+                    }`}
+                    title={
+                      !canUserSendMessage(loggedInUser)
+                        ? "Account restricted - cannot send messages"
+                        : ""
+                    }
+                  >
                     💬 Message
                   </button>
                 </>
@@ -820,6 +1036,18 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
+
+      {/* Account Status Warning for restricted friend actions */}
+      {loggedInUser &&
+        (!canUserSendFriendRequest(loggedInUser) ||
+          !canUserAcceptFriendRequest(loggedInUser) ||
+          !canUserUnfriend(loggedInUser) ||
+          !canUserCancelFriendRequest(loggedInUser)) && (
+          <div className="max-w-5xl mx-auto px-4 py-4">
+            <AccountStatusWarning user={loggedInUser} />
+          </div>
+        )}
+
       {/* Navigation Tabs */}
       <div className="bg-white border-t border-gray-200 sticky top-0 z-40">
         <div className="max-w-5xl mx-auto px-4">
@@ -1015,7 +1243,7 @@ export default function ProfilePage() {
                               <div className="w-16 h-16 rounded-full bg-gray-200 overflow-hidden mb-2">
                                 {friend.profilePicture ? (
                                   <img
-                                    src={friend.profilePicture}
+                                    src={`${url}/${friend.profilePicture}`}
                                     alt={friend.name || friend.username}
                                     className="w-full h-full object-cover"
                                   />
@@ -1066,6 +1294,7 @@ export default function ProfilePage() {
                     currentUser={loggedInUser}
                     onPostClick={openModal}
                     showCreatePost={isOwnProfile()}
+                    showBoostedPosts={true}
                     onReact={handleReact}
                     username={username}
                     onRefreshPosts={refreshProfilePosts}
@@ -1090,6 +1319,7 @@ export default function ProfilePage() {
                 <FriendsSection
                   friends={friends}
                   friendsLoading={friendsLoading}
+                  currentUser={currentUser}
                   onBackToTimeline={() => setActiveTab("Timeline")}
                 />
               </div>
@@ -1148,7 +1378,7 @@ export default function ProfilePage() {
                 <div className="w-16 h-16 rounded-full bg-gray-200 overflow-hidden flex-shrink-0">
                   {currentUser?.profilePicture ? (
                     <img
-                      src={currentUser.profilePicture}
+                      src={`${url}/${currentUser.profilePicture}`}
                       alt={currentUser.name || currentUser.username}
                       className="w-full h-full object-cover"
                     />
@@ -1234,7 +1464,7 @@ export default function ProfilePage() {
                 <div className="w-16 h-16 rounded-full bg-gray-200 overflow-hidden flex-shrink-0">
                   {currentUser?.profilePicture ? (
                     <img
-                      src={currentUser.profilePicture}
+                      src={`${url}/${currentUser.profilePicture}`}
                       alt={currentUser.name || currentUser.username}
                       className="w-full h-full object-cover"
                     />
@@ -1290,6 +1520,150 @@ export default function ProfilePage() {
                   "Cancel Request"
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cover Photo Edit Modal */}
+      {showCoverPhotoModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="p-6 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900">
+                Edit Cover Photo
+              </h2>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6">
+              {!selectedCoverPhoto ? (
+                /* Upload Section */
+                <div className="space-y-4">
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+                    <div className="space-y-4">
+                      <div className="text-4xl">📷</div>
+                      <div>
+                        <p className="text-lg font-medium text-gray-900">
+                          Upload Cover Photo
+                        </p>
+                        <p className="text-sm text-gray-500 mt-1">
+                          Choose a photo that represents you. It will be
+                          displayed at the top of your profile.
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleCoverPhotoUpload}
+                          className="hidden"
+                          id="cover-photo-upload"
+                        />
+                        <label
+                          htmlFor="cover-photo-upload"
+                          className="cursor-pointer bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition inline-block"
+                        >
+                          Choose Photo
+                        </label>
+                        <p className="text-xs text-gray-500">
+                          Recommended size: 1640x859 pixels. Max size: 10MB
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* Review Section */
+                <div className="space-y-4">
+                  <div className="text-center">
+                    <h3 className="text-lg font-medium text-gray-900 mb-4">
+                      Review Your Cover Photo
+                    </h3>
+                  </div>
+
+                  {/* Preview */}
+                  <div className="relative">
+                    <div className="w-full h-64 bg-gray-100 rounded-lg overflow-hidden">
+                      {coverPhotoPreview && (
+                        <img
+                          src={coverPhotoPreview}
+                          alt="Cover photo preview"
+                          className="w-full h-full object-cover"
+                        />
+                      )}
+                    </div>
+
+                    {/* Profile picture overlay for context */}
+                    <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1/2">
+                      <div className="w-20 h-20 rounded-full border-2 border-white bg-gray-200 overflow-hidden shadow-lg">
+                        {currentUser?.profilePicture ? (
+                          <img
+                            src={`${url}/${currentUser.profilePicture}`}
+                            alt="Profile"
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-gray-300">
+                            <FaceIcon
+                              width={30}
+                              height={30}
+                              className="text-gray-600"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-8">
+                    <p className="text-sm text-gray-600 text-center">
+                      This is how your cover photo will appear on your profile.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 bg-gray-50 rounded-b-lg flex space-x-3 justify-end">
+              <button
+                onClick={handleCancelCoverPhoto}
+                disabled={coverPhotoLoading}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              {selectedCoverPhoto && (
+                <>
+                  <button
+                    onClick={() => {
+                      setSelectedCoverPhoto(null);
+                      setCoverPhotoPreview(null);
+                    }}
+                    disabled={coverPhotoLoading}
+                    className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition disabled:opacity-50"
+                  >
+                    Choose Different Photo
+                  </button>
+                  <button
+                    onClick={handleSaveCoverPhoto}
+                    disabled={coverPhotoLoading}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 flex items-center"
+                  >
+                    {coverPhotoLoading ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Saving...
+                      </>
+                    ) : (
+                      "Save Cover Photo"
+                    )}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

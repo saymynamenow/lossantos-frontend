@@ -1,14 +1,21 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import type { User } from "../type";
 import NavigationBar from "./components/NavigationBar";
 import Sidebar from "./components/Sidebar";
 import RigthSidebar from "./components/RightSidebar";
 import { ImageIcon, ArrowLeftIcon } from "@radix-ui/react-icons";
 import apiService from "../services/api";
+import { useAuth } from "../hooks/authContext";
+import { canUserCreatePage } from "../utils/accountStatus";
+import { AccountStatusWarning } from "../components/AccountStatusWarning";
 
 const PageCreate: React.FC = () => {
   const navigate = useNavigate();
+  const { user, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [fallbackUser, setFallbackUser] = useState<User | null>(null);
+  const [fallbackLoading, setFallbackLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -21,6 +28,48 @@ const PageCreate: React.FC = () => {
   const [profilePicture, setProfilePicture] = useState<File | null>(null);
   const [coverPhoto, setCoverPhoto] = useState<File | null>(null);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
+
+  // Fallback user loading if auth context fails
+  useEffect(() => {
+    if (!authLoading && !user) {
+      console.log("PageCreate: Auth context failed, trying direct API call...");
+      setFallbackLoading(true);
+
+      apiService.user
+        .getCurrentUser()
+        .then((userData) => {
+          console.log("PageCreate: Direct API call successful:", userData);
+          setFallbackUser(userData.user || userData);
+        })
+        .catch((error) => {
+          console.log("PageCreate: Direct API call failed:", error);
+          setFallbackUser(null);
+        })
+        .finally(() => {
+          setFallbackLoading(false);
+        });
+    }
+  }, [authLoading, user]);
+
+  // Use fallback user if auth context user is not available
+  const currentUser = user || fallbackUser;
+  const isUserLoading = authLoading || fallbackLoading;
+  const canCreatePage = canUserCreatePage(currentUser);
+
+  // Show loading state while auth is loading
+  if (isUserLoading) {
+    return (
+      <div className="">
+        <NavigationBar />
+        <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const categories = [
     "Technology",
@@ -94,6 +143,15 @@ const PageCreate: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Check if user can create a page
+    if (!canCreatePage) {
+      setErrors({
+        submit:
+          "You are not authorized to create pages. Please check your account status.",
+      });
+      return;
+    }
+
     if (!validateForm()) return;
 
     try {
@@ -147,10 +205,19 @@ const PageCreate: React.FC = () => {
             </div>
           </div>
 
+          {/* Account Status Warning */}
+          {!canCreatePage && (
+            <div className="mb-6">
+              <AccountStatusWarning user={currentUser} />
+            </div>
+          )}
+
           {/* Form */}
           <form
             onSubmit={handleSubmit}
-            className="bg-white rounded-xl shadow-md overflow-hidden text-black "
+            className={`bg-white rounded-xl shadow-md overflow-hidden text-black ${
+              !canCreatePage ? "opacity-50 pointer-events-none" : ""
+            }`}
           >
             {/* Cover Photo Section */}
             <div className="relative h-48 bg-gradient-to-br from-blue-400 to-blue-600">
@@ -350,10 +417,23 @@ const PageCreate: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={loading}
-                  className="px-8 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                  disabled={loading || !canCreatePage}
+                  className={`px-8 py-3 font-medium rounded-lg transition-colors ${
+                    canCreatePage
+                      ? "bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-400"
+                      : "bg-gray-400 text-gray-300 cursor-not-allowed"
+                  } disabled:cursor-not-allowed`}
+                  title={
+                    !canCreatePage
+                      ? "Account restricted - cannot create pages"
+                      : ""
+                  }
                 >
-                  {loading ? "Creating..." : "Create Page"}
+                  {loading
+                    ? "Creating..."
+                    : canCreatePage
+                    ? "Create Page"
+                    : "Cannot Create Page"}
                 </button>
               </div>
             </div>

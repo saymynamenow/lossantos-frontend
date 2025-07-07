@@ -6,10 +6,17 @@ export type User = {
   name: string;
   bio?: string | null;
   profilePicture?: string | null;
+  birthdate?: string | null;
+  gender?: string | null;
+  location?: string | null;
+  relationshipStatus?: string | null;
+  relationships?: string | null;
+  studyField?: string | null;
   isVerified: boolean;
   isProUser?: boolean;
   isPro?: boolean; // Alias for isProUser
   isAdmin?: boolean;
+  accountStatus?: "active" | "pending" | "suspend" | "inactive";
   createdAt: string;
   updatedAt: string;
 

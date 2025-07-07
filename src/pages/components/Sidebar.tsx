@@ -1,7 +1,11 @@
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../../hooks/authContext";
 
 export default function Sidebar() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+
+  const isProUser = user?.isProUser || false;
 
   return (
     <aside className="w-96 ml-52 my-8 rounded-xl bg-white shadow-lg p-8 flex flex-col h-fit sticky top-16">
@@ -33,7 +37,7 @@ export default function Sidebar() {
           {/* Saved Posts */}
           <li>
             <a
-              href="#"
+              href="/comingsoon"
               className="flex items-center px-4 py-3 rounded-lg text-red-500 hover:bg-gray-100 text-lg"
             >
               <span className="mr-4">
@@ -53,41 +57,66 @@ export default function Sidebar() {
             </a>
           </li>
           {/* Memories */}
-          <li>
-            <a
-              href="#"
-              className="flex items-center px-4 py-3 rounded-lg text-red-500 hover:bg-gray-100 text-lg"
-            >
-              <span className="mr-4">
-                {/* Memories Icon */}
-                <svg
-                  width="26"
-                  height="26"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  viewBox="0 0 24 24"
-                >
-                  <rect x="3" y="4" width="18" height="16" rx="2" />
-                  <path d="M8 2v4M16 2v4" />
-                </svg>
-              </span>
-              Memories
-            </a>
-          </li>
         </ul>
         {/* Advertising Section */}
-        <div className="mt-8 mb-2 text-xs text-gray-400 font-semibold tracking-wider">
+        {/* <div className="mt-8 mb-2 text-xs text-gray-400 font-semibold tracking-wider">
           ADVERTISING
+        </div> */}
+
+        <div className="mt-8 mb-2 text-xs text-gray-400 font-semibold tracking-wider">
+          PRO FEATURES
         </div>
-        <ul className="space-y-1">
+
+        {isProUser && (
+          <ul className="space-y-1">
+            <li>
+              <button
+                onClick={() => navigate("/boosted-posts")}
+                className="flex items-center px-4 py-3 rounded-lg text-red-500 hover:bg-gray-100 text-lg w-full text-left"
+              >
+                <span className="mr-4">
+                  <svg
+                    width="26"
+                    height="26"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    viewBox="0 0 24 24"
+                  >
+                    <path d="M12 2l4 8H8l4-8zm0 20v-8m0 0l-4 8m4-8l4 8" />
+                  </svg>
+                </span>
+                Boosted Posts
+                <span className="ml-auto bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
+                  PRO
+                </span>
+              </button>
+            </li>
+          </ul>
+        )}
+
+        {!isProUser && (
+          <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg p-4 border border-blue-200">
+            <h3 className="font-semibold text-gray-800 mb-2">Upgrade to Pro</h3>
+            <p className="text-sm text-gray-600 mb-3">
+              Get access to boosted posts and other premium features!
+            </p>
+            <button
+              onClick={() => navigate("/comingsoon")}
+              className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+            >
+              Learn More
+            </button>
+          </div>
+        )}
+
+        {/* <ul className="space-y-1">
           <li>
             <a
-              href="#"
+              href="/comingsoon"
               className="flex items-center px-4 py-3 rounded-lg text-red-500 hover:bg-gray-100 text-lg"
             >
               <span className="mr-4">
-                {/* Ads Manager Icon */}
                 <svg
                   width="26"
                   height="26"
@@ -105,11 +134,10 @@ export default function Sidebar() {
           </li>
           <li>
             <a
-              href="#"
+              href="/comingsoon"
               className="flex items-center px-4 py-3 rounded-lg text-red-500 hover:bg-gray-100 text-lg"
             >
               <span className="mr-4">
-                {/* Wallet Icon */}
                 <svg
                   width="26"
                   height="26"
@@ -127,11 +155,10 @@ export default function Sidebar() {
           </li>
           <li>
             <a
-              href="#"
+              href="/comingsoon"
               className="flex items-center px-4 py-3 rounded-lg text-red-500 hover:bg-gray-100 text-lg"
             >
               <span className="mr-4">
-                {/* Boosted Icon */}
                 <svg
                   width="26"
                   height="26"
@@ -157,8 +184,8 @@ export default function Sidebar() {
               </svg>
             </a>
           </li>
-        </ul>
-        {/* Explore Section */}
+        </ul> */}
+
         <div className="mt-8 mb-2 text-xs text-gray-400 font-semibold tracking-wider">
           EXPLORE
         </div>
@@ -209,7 +236,7 @@ export default function Sidebar() {
           </li>
           <li>
             <a
-              href="#"
+              href="/comingsoon"
               className="flex items-center px-4 py-3 rounded-lg text-red-500 hover:bg-gray-100 text-lg"
             >
               <span className="mr-4">
@@ -232,7 +259,7 @@ export default function Sidebar() {
           </li>
           <li>
             <a
-              href="#"
+              href="/comingsoon"
               className="flex items-center px-4 py-3 rounded-lg text-red-500 hover:bg-gray-100 text-lg"
             >
               <span className="mr-4">
@@ -254,7 +281,7 @@ export default function Sidebar() {
           </li>
           <li>
             <a
-              href="#"
+              href="/comingsoon"
               className="flex items-center px-4 py-3 rounded-lg text-red-500 hover:bg-gray-100 text-lg"
             >
               <span className="mr-4">
@@ -276,7 +303,7 @@ export default function Sidebar() {
           </li>
           <li>
             <a
-              href="#"
+              href="/comingsoon"
               className="flex items-center px-4 py-3 rounded-lg text-red-500 hover:bg-gray-100 text-lg"
             >
               <span className="mr-4">
@@ -298,7 +325,7 @@ export default function Sidebar() {
           </li>
           <li>
             <a
-              href="#"
+              href="/comingsoon"
               className="flex items-center px-4 py-3 rounded-lg text-red-500 hover:bg-gray-100 text-lg"
             >
               <span className="mr-4">
@@ -319,7 +346,7 @@ export default function Sidebar() {
           </li>
           <li>
             <a
-              href="#"
+              href="/comingsoon"
               className="flex items-center px-4 py-3 rounded-lg text-red-500 hover:bg-gray-100 text-lg"
             >
               <span className="mr-4">

@@ -18,7 +18,6 @@ interface PageSettingsManagementProps {
 
 const PageSettingsManagement: React.FC<PageSettingsManagementProps> = ({
   page,
-  currentUser,
   currentUserRole,
   isOwner,
 }) => {

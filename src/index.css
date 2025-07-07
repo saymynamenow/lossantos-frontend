@@ -153,3 +153,228 @@
   display: inline-block !important;
   margin: 0 1px !important;
 }
+
+/* Boosted Posts Animations */
+@keyframes sparkle {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0) rotate(0deg);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2) rotate(180deg);
+  }
+}
+
+@keyframes sparkle-float {
+  0% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-15px) rotate(180deg);
+  }
+  100% {
+    transform: translateY(0px) rotate(360deg);
+  }
+}
+
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.3);
+  }
+}
+
+@keyframes gradient-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+  25% {
+    background-position: 100% 50%;
+  }
+  50% {
+    background-position: 200% 50%;
+  }
+  75% {
+    background-position: 300% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes glow-pulse {
+  0%,
+  100% {
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes boosted-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 30px rgba(59, 130, 246, 0.3),
+      0 0 60px rgba(139, 92, 246, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(59, 130, 246, 0.5),
+      0 0 80px rgba(139, 92, 246, 0.4);
+  }
+}
+
+/* Boosted Post Utility Classes */
+.boosted-border {
+  position: relative;
+  background: white !important;
+  border: 4px solid transparent;
+  background-clip: padding-box;
+  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+  overflow: hidden;
+}
+
+.boosted-border::before {
+  content: "";
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  right: -4px;
+  bottom: -4px;
+  background-size: 400% 400%;
+  animation: gradient-shift 4s ease infinite;
+  border-radius: inherit;
+  z-index: -1;
+}
+
+.boosted-border:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  background: white !important;
+}
+
+.boosted-border:hover::before {
+  animation: gradient-shift 2s ease infinite;
+}
+
+.shimmer-effect {
+  animation: shimmer 2s infinite linear;
+}
+
+.sparkle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: radial-gradient(circle, #fbbf24, #f59e0b);
+  border-radius: 50%;
+  animation: sparkle 2s infinite ease-in-out;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Enhanced sparkle variations */
+.sparkle:nth-child(1) {
+  top: 10%;
+  left: 20%;
+  animation-delay: 0s;
+  animation: twinkle 3s infinite ease-in-out;
+}
+.sparkle:nth-child(2) {
+  top: 20%;
+  right: 30%;
+  animation-delay: 0.5s;
+  animation: sparkle 2.5s infinite ease-in-out;
+}
+.sparkle:nth-child(3) {
+  bottom: 30%;
+  left: 15%;
+  animation-delay: 1s;
+  animation: sparkle-float 3.5s infinite ease-in-out;
+}
+.sparkle:nth-child(4) {
+  bottom: 15%;
+  right: 20%;
+  animation-delay: 1.5s;
+  animation: twinkle 2s infinite ease-in-out;
+}
+.sparkle:nth-child(5) {
+  top: 50%;
+  left: 10%;
+  animation-delay: 0.3s;
+  animation: sparkle 3s infinite ease-in-out;
+}
+.sparkle:nth-child(6) {
+  top: 60%;
+  right: 10%;
+  animation-delay: 0.8s;
+  animation: sparkle-float 2.5s infinite ease-in-out;
+}
+
+/* Additional sparkle colors */
+.sparkle:nth-child(odd) {
+  background: radial-gradient(circle, #3b82f6, #1d4ed8);
+}
+.sparkle:nth-child(even) {
+  background: radial-gradient(circle, #8b5cf6, #7c3aed);
+}
+.sparkle:nth-child(3n) {
+  background: radial-gradient(circle, #ec4899, #be185d);
+}
+
+.sparkle-container {
+  position: relative;
+  overflow: hidden;
+}
+
+/* Reaction popup styling */
+.reaction-popup {
+  position: absolute;
+  z-index: 9999;
+  pointer-events: none;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  min-width: max-content;
+}
+
+.reaction-popup.visible {
+  pointer-events: auto;
+}
+
+/* Ensure reaction buttons don't get cut off */
+.post-actions-container {
+  position: relative;
+  overflow: visible;
+  padding-bottom: 60px; /* Add space for reaction popup */
+}
+
+/* Ensure parent containers don't clip reactions */
+.post-container {
+  overflow: visible;
+}
+
+.post-content {
+  overflow: visible;
+}
+
+/* Boosted post container styling */
+.boosted-post-container {
+  position: relative;
+  overflow: visible;
+  margin-bottom: 20px;
+}

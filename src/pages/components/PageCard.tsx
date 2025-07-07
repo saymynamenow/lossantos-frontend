@@ -1,11 +1,12 @@
 import React from "react";
-import type { Page } from "../../type";
+import type { Page, User } from "../../type";
 import {
   CheckCircledIcon,
   PersonIcon,
   EyeOpenIcon,
 } from "@radix-ui/react-icons";
 import { useNavigate } from "react-router-dom";
+import { canUserFollowUser } from "../../utils/accountStatus";
 
 interface PageCardProps {
   page: Page;
@@ -14,7 +15,7 @@ interface PageCardProps {
   isFollowing?: boolean;
   showActions?: boolean;
   size?: "small" | "medium" | "large";
-  currentUser?: any;
+  currentUser?: User | null;
 }
 
 const PageCard: React.FC<PageCardProps> = ({
@@ -24,12 +25,13 @@ const PageCard: React.FC<PageCardProps> = ({
   isFollowing = false,
   showActions = true,
   size = "medium",
-  currentUser: user,
+  currentUser,
 }) => {
   const navigate = useNavigate();
   const url = import.meta.env.VITE_UPLOADS_URL;
 
-  const isOwner = user && page.ownerId === user.id;
+  const isOwner = currentUser && page.ownerId === currentUser.id;
+  const canFollow = canUserFollowUser(currentUser || null);
 
   const handlePageClick = () => {
     navigate(`/page/${page.id}`);
@@ -37,6 +39,9 @@ const PageCard: React.FC<PageCardProps> = ({
 
   const handleFollowClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+
+    if (!canFollow) return; // Block if account is restricted
+
     if (isFollowing && onUnfollow) {
       onUnfollow(page.id);
     } else if (!isFollowing && onFollow) {
@@ -143,11 +148,12 @@ const PageCard: React.FC<PageCardProps> = ({
             {showActions && !isOwner && (
               <button
                 onClick={handleFollowClick}
+                disabled={!canFollow}
                 className={`ml-3 px-4 py-2 text-sm font-medium rounded-lg transition-colors duration-200 ${
                   isFollowing
                     ? "bg-gray-200 text-gray-700 hover:bg-gray-300"
                     : "bg-blue-600 text-white hover:bg-blue-700"
-                }`}
+                } ${!canFollow ? "opacity-50 cursor-not-allowed" : ""}`}
               >
                 {isFollowing ? "Unfollow" : "Follow"}
               </button>

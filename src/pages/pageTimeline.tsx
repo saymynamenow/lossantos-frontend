@@ -3,10 +3,12 @@ import { useParams, useNavigate } from "react-router-dom";
 import type { Page, PagePost, User } from "../type";
 import PageHeader from "./components/PageHeader";
 import PagePostFeed from "./components/PagePostFeed";
+import PostDetailModal from "./components/PostDetailModal";
 import NavigationBar from "./components/NavigationBar";
 import Sidebar from "./components/Sidebar";
 import RigthSidebar from "./components/RightSidebar";
 import apiService from "../services/api";
+import { canUserJoinPage, canUserFollowUser } from "../utils/accountStatus";
 
 const PageTimeline: React.FC = () => {
   const { pageId } = useParams<{ pageId: string }>();
@@ -25,6 +27,8 @@ const PageTimeline: React.FC = () => {
   >("none");
   const [hasPendingRequest, setHasPendingRequest] = useState(false);
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
+  const [modalPost, setModalPost] = useState<PagePost | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const hasInitialized = useRef(false);
 
@@ -167,7 +171,7 @@ const PageTimeline: React.FC = () => {
   }, [pageId, navigate]);
 
   const handleFollow = async () => {
-    if (!page) return;
+    if (!page || !canUserFollowUser(currentUser)) return;
 
     try {
       await apiService.page.followPage(page.id);
@@ -181,7 +185,7 @@ const PageTimeline: React.FC = () => {
   };
 
   const handleUnfollow = async () => {
-    if (!page) return;
+    if (!page || !canUserFollowUser(currentUser)) return;
 
     try {
       await apiService.page.unfollowPage(page.id);
@@ -200,7 +204,7 @@ const PageTimeline: React.FC = () => {
   };
 
   const handleJoin = async () => {
-    if (!page) return;
+    if (!page || !canUserJoinPage(currentUser)) return;
 
     try {
       const response = await apiService.page.joinPage(page.id);
@@ -277,6 +281,84 @@ const PageTimeline: React.FC = () => {
     }
   };
 
+  const openModal = (post: PagePost) => {
+    setModalPost(post);
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setModalPost(null);
+    setIsModalOpen(false);
+  };
+
+  const updatePost = (updatedPost: PagePost) => {
+    setPosts((prevPosts) =>
+      prevPosts.map((post) => (post.id === updatedPost.id ? updatedPost : post))
+    );
+    if (modalPost && modalPost.id === updatedPost.id) {
+      setModalPost(updatedPost);
+    }
+  };
+
+  const handleReact = async (postId: string, reactionType: string) => {
+    if (!currentUser) return;
+
+    try {
+      // First, optimistically update the local state for immediate feedback
+      const optimisticPosts = posts.map((post) => {
+        if (post.id === postId) {
+          const existingReactionIndex = post.reactions?.findIndex(
+            (reaction) => reaction.userId === currentUser.id
+          );
+          let newReactions = [...(post.reactions || [])];
+
+          if (
+            existingReactionIndex !== undefined &&
+            existingReactionIndex >= 0
+          ) {
+            if (newReactions[existingReactionIndex].type === reactionType) {
+              newReactions.splice(existingReactionIndex, 1);
+            } else {
+              newReactions[existingReactionIndex] = {
+                ...newReactions[existingReactionIndex],
+                type: reactionType,
+              };
+            }
+          } else {
+            newReactions.push({
+              id: `temp-${Date.now()}`,
+              type: reactionType,
+              userId: currentUser.id,
+              postId: postId,
+              createdAt: new Date().toISOString(),
+              user: currentUser,
+            });
+          }
+
+          return { ...post, reactions: newReactions };
+        }
+        return post;
+      });
+
+      setPosts(optimisticPosts);
+
+      // Update modal post if it's the same post
+      if (modalPost && modalPost.id === postId) {
+        const updatedModalPost = optimisticPosts.find((p) => p.id === postId);
+        if (updatedModalPost) {
+          setModalPost(updatedModalPost);
+        }
+      }
+
+      // Then make the API call
+      await apiService.reaction.reactToPost(postId, reactionType);
+    } catch (error) {
+      console.error("Failed to react to post:", error);
+      // Optionally revert the optimistic update on error
+      // You could fetch the post again here to get the correct state
+    }
+  };
+
   const handleNewPost = async (
     content: string,
     media?: File[]
@@ -286,6 +368,7 @@ const PageTimeline: React.FC = () => {
     }
 
     // Check if user is either a member or the page owner
+    const isOwner = currentUser?.id === page.ownerId;
     if (!isMember && !isOwner) {
       throw new Error(
         "Cannot post: you must be a member of this page or the page owner"
@@ -293,20 +376,27 @@ const PageTimeline: React.FC = () => {
     }
 
     try {
-      const newPost = await apiService.page.createPagePost(page.id, {
+      console.log("Creating page post with:", { content, media });
+
+      const response = await apiService.page.createPagePost(page.id, {
         content,
         media,
       });
 
+      console.log("Page post creation response:", response);
+
+      // Handle different possible response structures
+      const newPost = response.post || response;
+
       // Add the new post to the beginning of the posts array
-      setPosts((prev) => [newPost.post, ...prev]);
+      setPosts((prev) => [newPost, ...prev]);
 
       // Update page post count
       setPage((prev) =>
         prev ? { ...prev, postCount: (prev.postCount || 0) + 1 } : null
       );
 
-      return newPost.post;
+      return newPost;
     } catch (error) {
       console.error("Failed to create page post:", error);
       throw error;
@@ -427,6 +517,7 @@ const PageTimeline: React.FC = () => {
           {/* Page Header */}
           <PageHeader
             page={{ ...page, isFollowing }}
+            currentUser={currentUser}
             onFollow={handleFollow}
             onUnfollow={handleUnfollow}
             onJoin={handleJoin}
@@ -450,12 +541,31 @@ const PageTimeline: React.FC = () => {
               canPost={canPost}
               loading={postsLoading}
               page={page}
+              onPostClick={openModal}
             />
           </div>
         </div>
 
         <RigthSidebar />
       </div>
+
+      {/* Post Detail Modal */}
+      {isModalOpen && modalPost && (
+        <PostDetailModal
+          post={modalPost as any} // PagePost is compatible with Post structure
+          isOpen={isModalOpen}
+          onClose={closeModal}
+          currentUser={currentUser}
+          onReact={handleReact}
+          onToggleComments={() => {}}
+          showComments={false}
+          commentInputs={{}}
+          setCommentInputs={() => {}}
+          expandedPosts={{}}
+          onToggleExpansion={() => {}}
+          onUpdatePost={updatePost as any}
+        />
+      )}
     </div>
   );
 };

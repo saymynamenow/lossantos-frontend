@@ -3,22 +3,21 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { formatDistanceToNow } from "date-fns";
 import { FaceIcon } from "@radix-ui/react-icons";
-import type { Post } from "../type";
+import type { Post, User } from "../type";
 import NavigationBar from "./components/NavigationBar";
 import Sidebar from "./components/Sidebar";
 import RigthSidebar from "./components/RightSidebar";
 import PostMediaGrid from "./components/PostMediaGrid";
 import UserBadges from "./components/UserBadges";
+import { canUserComment, canUserReact } from "../utils/accountStatus";
+import { AccountStatusWarning } from "../components/AccountStatusWarning";
 
 export default function PostDetail() {
   const { postId } = useParams<{ postId: string }>();
   const [post, setPost] = useState<Post | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [currentUser, setCurrentUser] = useState<{
-    id: string;
-    name: string;
-  } | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [showComments, setShowComments] = useState(true);
   const [commentInputs, setCommentInputs] = useState<{ [key: string]: string }>(
     {}
@@ -35,10 +34,10 @@ export default function PostDetail() {
         const response = await axios.get(`${apiUrl}/auth/me`, {
           withCredentials: true,
         });
-        setCurrentUser({ id: response.data.id, name: response.data.name });
+        setCurrentUser(response.data.user || response.data);
       } catch (error) {
         console.error("Failed to fetch current user", error);
-        setCurrentUser({ id: "temp-user", name: "You" });
+        setCurrentUser(null);
       }
     };
     fetchCurrentUser();
@@ -97,6 +96,12 @@ export default function PostDetail() {
 
   const handleReact = async (postId: string, reactionType: string) => {
     if (!currentUser || !post) return;
+
+    // Check if user can react
+    if (!canUserReact(currentUser)) {
+      console.log("User cannot react due to account status");
+      return;
+    }
 
     try {
       const currentReactions = post.reactions || [];
@@ -173,6 +178,12 @@ export default function PostDetail() {
   const handleCommentSubmit = async (postId: string) => {
     const commentContent = commentInputs[postId]?.trim();
     if (!commentContent || !currentUser) return;
+
+    // Check if user can comment
+    if (!canUserComment(currentUser)) {
+      console.log("User cannot comment due to account status");
+      return;
+    }
 
     try {
       const response = await axios.post(
@@ -649,48 +660,66 @@ export default function PostDetail() {
                 </div>
 
                 {/* Comment Input */}
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="Write a comment..."
-                    value={commentInputs[post.id] || ""}
-                    onChange={(e) =>
-                      setCommentInputs((prev) => ({
-                        ...prev,
-                        [post.id]: e.target.value,
-                      }))
-                    }
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        handleCommentSubmit(post.id);
+                {!canUserComment(currentUser) ? (
+                  <div className="p-4 bg-gray-50 rounded-lg">
+                    <div className="flex items-center space-x-3 mb-3">
+                      <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center">
+                        <FaceIcon
+                          width={16}
+                          height={16}
+                          className="text-gray-400"
+                        />
+                      </div>
+                      <div className="flex-1 bg-gray-200 rounded-full px-5 py-3 text-gray-400 cursor-not-allowed text-base">
+                        Write a comment...
+                      </div>
+                    </div>
+                    <AccountStatusWarning user={currentUser} />
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Write a comment..."
+                      value={commentInputs[post.id] || ""}
+                      onChange={(e) =>
+                        setCommentInputs((prev) => ({
+                          ...prev,
+                          [post.id]: e.target.value,
+                        }))
                       }
-                    }}
-                    className="w-full px-5 py-3 pr-12 rounded-full border border-gray-200 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-red-200 text-black placeholder-black text-base"
-                  />
-                  <button
-                    onClick={() => handleCommentSubmit(post.id)}
-                    disabled={!commentInputs[post.id]?.trim()}
-                    className={`absolute right-2 top-1/2 transform -translate-y-1/2 p-2 rounded-full transition ${
-                      commentInputs[post.id]?.trim()
-                        ? "text-red-600 hover:bg-red-50 cursor-pointer"
-                        : "text-gray-400 cursor-not-allowed"
-                    }`}
-                  >
-                    <svg
-                      width="20"
-                      height="20"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          handleCommentSubmit(post.id);
+                        }
+                      }}
+                      className="w-full px-5 py-3 pr-12 rounded-full border border-gray-200 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-red-200 text-black placeholder-black text-base"
+                    />
+                    <button
+                      onClick={() => handleCommentSubmit(post.id)}
+                      disabled={!commentInputs[post.id]?.trim()}
+                      className={`absolute right-2 top-1/2 transform -translate-y-1/2 p-2 rounded-full transition ${
+                        commentInputs[post.id]?.trim()
+                          ? "text-red-600 hover:bg-red-50 cursor-pointer"
+                          : "text-gray-400 cursor-not-allowed"
+                      }`}
                     >
-                      <line x1="22" y1="2" x2="11" y2="13"></line>
-                      <polygon points="22,2 15,22 11,13 2,9 22,2"></polygon>
-                    </svg>
-                  </button>
-                </div>
+                      <svg
+                        width="20"
+                        height="20"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <line x1="22" y1="2" x2="11" y2="13"></line>
+                        <polygon points="22,2 15,22 11,13 2,9 22,2"></polygon>
+                      </svg>
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>

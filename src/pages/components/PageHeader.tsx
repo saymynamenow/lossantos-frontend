@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import type { Page } from "../../type";
+import type { Page, User } from "../../type";
 import {
   CheckCircledIcon,
   PersonIcon,
@@ -8,12 +8,14 @@ import {
   GearIcon,
   Share1Icon,
   ClockIcon,
-  ExternalLinkIcon,
 } from "@radix-ui/react-icons";
 import PendingRequestsModal from "./PendingRequestsModal";
+import { canUserJoinPage, canUserFollowUser } from "../../utils/accountStatus";
+import { AccountStatusWarning } from "../../components/AccountStatusWarning";
 
 interface PageHeaderProps {
   page: Page;
+  currentUser?: User | null;
   onFollow?: () => void;
   onUnfollow?: () => void;
   onJoin?: () => void;
@@ -29,12 +31,12 @@ interface PageHeaderProps {
 
 const PageHeader: React.FC<PageHeaderProps> = ({
   page,
+  currentUser,
   onFollow,
   onUnfollow,
   onJoin,
   onLeave,
   onShare,
-  onPageUpdate,
   isOwner = false,
   isFollowing = false,
   currentUserRole = "none",
@@ -50,6 +52,10 @@ const PageHeader: React.FC<PageHeaderProps> = ({
   const canManageRequests =
     isOwner || currentUserRole === "admin" || currentUserRole === "moderator";
 
+  // Check account status restrictions
+  const canJoinPage = canUserJoinPage(currentUser || null);
+  const canFollowPage = canUserFollowUser(currentUser || null);
+
   const url = import.meta.env.VITE_UPLOADS_URL;
 
   const handlePrimaryAction = () => {
@@ -61,13 +67,17 @@ const PageHeader: React.FC<PageHeaderProps> = ({
       // Do nothing - request is pending
       return;
     } else if (isFollowing) {
+      if (!canFollowPage) return; // Block if account is restricted
       onUnfollow?.();
     } else {
+      if (!canJoinPage) return; // Block if account is restricted
       onJoin?.();
     }
   };
-  console.log(isFollowing);
+
   const handleSecondaryAction = () => {
+    if (!canFollowPage) return; // Block if account is restricted
+
     if (isFollowing && !isMember) {
       onUnfollow?.();
     } else if (!isFollowing && !isMember) {
@@ -241,8 +251,22 @@ const PageHeader: React.FC<PageHeaderProps> = ({
             <div className="flex items-center space-x-3 mt-4 md:mt-0 md:ml-6">
               <button
                 onClick={handlePrimaryAction}
-                disabled={hasPendingRequest}
-                className={`px-6 py-2 font-medium rounded-lg transition-colors ${getPrimaryButtonStyle()}`}
+                disabled={
+                  hasPendingRequest ||
+                  (!canJoinPage &&
+                    !isMember &&
+                    !isOwner &&
+                    currentUserRole === "none")
+                }
+                className={`px-6 py-2 font-medium rounded-lg transition-colors ${getPrimaryButtonStyle()} ${
+                  (!canJoinPage &&
+                    !isMember &&
+                    !isOwner &&
+                    currentUserRole === "none") ||
+                  hasPendingRequest
+                    ? "opacity-50 cursor-not-allowed"
+                    : ""
+                }`}
               >
                 {hasPendingRequest && (
                   <ClockIcon className="w-4 h-4 inline mr-2" />
@@ -271,11 +295,12 @@ const PageHeader: React.FC<PageHeaderProps> = ({
               {!isOwner && !isMember && !hasPendingRequest && (
                 <button
                   onClick={handleSecondaryAction}
+                  disabled={!canFollowPage}
                   className={`px-4 py-2 font-medium rounded-lg transition-colors ${
                     isFollowing
                       ? "bg-gray-100 text-gray-700 hover:bg-gray-200"
                       : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                  }`}
+                  } ${!canFollowPage ? "opacity-50 cursor-not-allowed" : ""}`}
                 >
                   {isFollowing ? "Unfollow" : "Follow"}
                 </button>
@@ -292,6 +317,17 @@ const PageHeader: React.FC<PageHeaderProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Account Status Warning */}
+      {currentUser &&
+        !canJoinPage &&
+        !isMember &&
+        !isOwner &&
+        currentUserRole === "none" && (
+          <div className="px-6 pb-6">
+            <AccountStatusWarning user={currentUser} />
+          </div>
+        )}
 
       {/* Pending Requests Modal */}
       <PendingRequestsModal

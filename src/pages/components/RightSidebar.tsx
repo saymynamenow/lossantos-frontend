@@ -31,14 +31,28 @@ interface ProUser {
   isVerified?: boolean;
 }
 
+// Verified Page Interface
+interface VerifiedPage {
+  id: string;
+  name: string;
+  username?: string;
+  description?: string;
+  profileImage?: string;
+  isVerified: boolean;
+  followersCount?: number;
+}
+
 export default function RigthSidebar() {
   const navigate = useNavigate();
   const [sponsoredPost, setSponsoredPost] = useState<SponsoredPost | null>(
     null
   );
   const [proUsers, setProUsers] = useState<ProUser[]>([]);
+  const [verifiedPages, setVerifiedPages] = useState<VerifiedPage[]>([]);
   const [loading, setLoading] = useState(true);
   const [proUsersLoading, setProUsersLoading] = useState(true);
+  const [verifiedPagesLoading, setVerifiedPagesLoading] = useState(true);
+  const url = import.meta.env.VITE_UPLOADS_URL;
 
   // Fetch Pro users from database
   const fetchProUsers = useCallback(async () => {
@@ -59,6 +73,51 @@ export default function RigthSidebar() {
       setProUsers([]);
     } finally {
       setProUsersLoading(false);
+    }
+  }, []);
+
+  // Fetch verified pages from page suggestions API
+  const fetchVerifiedPages = useCallback(async () => {
+    try {
+      setVerifiedPagesLoading(true);
+      // Try to use the page suggestions endpoint
+      const apiUrl = import.meta.env.VITE_API_URL;
+      const response = await fetch(`${apiUrl}/page/suggestions`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const allPages = data.pages || data || [];
+
+        // Filter for verified pages only
+        const verifiedPagesOnly = allPages.filter(
+          (page: VerifiedPage) => page.isVerified === true
+        );
+
+        // Take first 3 verified pages for display
+        setVerifiedPages(verifiedPagesOnly.slice(0, 3));
+      } else {
+        // Fallback to getAllPages if suggestions endpoint is not available
+        const fallbackResponse = await apiService.page.getAllPages(1, 50);
+        const allPages = fallbackResponse.pages || fallbackResponse || [];
+
+        // Filter for verified pages only
+        const verifiedPagesOnly = allPages.filter(
+          (page: VerifiedPage) => page.isVerified === true
+        );
+
+        // Take first 3 verified pages for display
+        setVerifiedPages(verifiedPagesOnly.slice(0, 3));
+      }
+    } catch (error) {
+      console.error("Error fetching verified pages:", error);
+      setVerifiedPages([]);
+    } finally {
+      setVerifiedPagesLoading(false);
     }
   }, []);
 
@@ -92,7 +151,8 @@ export default function RigthSidebar() {
   useEffect(() => {
     fetchSponsoredPost();
     fetchProUsers();
-  }, [fetchSponsoredPost, fetchProUsers]);
+    fetchVerifiedPages();
+  }, [fetchSponsoredPost, fetchProUsers, fetchVerifiedPages]);
   return (
     <div className="hidden lg:block w-1/4 p-6 space-y-6">
       {/* Pro Users Section */}
@@ -127,7 +187,7 @@ export default function RigthSidebar() {
                   >
                     {user.profilePicture && user.profilePicture !== "null" ? (
                       <img
-                        src={user.profilePicture}
+                        src={`${url}/${user.profilePicture}`}
                         alt={user.name}
                         className="w-full h-full rounded-full object-cover"
                       />
@@ -169,65 +229,94 @@ export default function RigthSidebar() {
         </button>
       </div>
 
-      {/* Pro Pages Section */}
+      {/* Verified Pages Section */}
       <div className="bg-white rounded-xl shadow p-6">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">Pro Pages</h3>
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <div className="w-10 h-10 rounded-lg bg-gradient-to-r from-blue-500 to-purple-600 p-0.5">
-                <div className="w-full h-full rounded-lg bg-white flex items-center justify-center">
-                  <span className="text-xs font-bold text-blue-600">TC</span>
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">
+          Verified Pages
+        </h3>
+        {verifiedPagesLoading ? (
+          <div className="space-y-3">
+            {[...Array(3)].map((_, index) => (
+              <div
+                key={index}
+                className="flex items-center justify-between animate-pulse"
+              >
+                <div className="flex items-center">
+                  <div className="w-10 h-10 rounded-lg bg-gray-200"></div>
+                  <div className="ml-3">
+                    <div className="h-4 bg-gray-200 rounded w-20 mb-1"></div>
+                    <div className="h-3 bg-gray-200 rounded w-16"></div>
+                  </div>
+                </div>
+                <div className="w-12 h-6 bg-gray-200 rounded-full"></div>
+              </div>
+            ))}
+          </div>
+        ) : verifiedPages.length > 0 ? (
+          <div className="space-y-3">
+            {verifiedPages.map((page) => (
+              <div key={page.id} className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <button
+                    onClick={() => navigate(`/page/${page.id}`)}
+                    className="w-10 h-10 rounded-lg bg-gradient-to-r from-blue-500 to-purple-600 p-0.5 hover:scale-105 transition-transform"
+                  >
+                    {page.profileImage && page.profileImage !== "null" ? (
+                      <img
+                        src={`${url}/${page.profileImage}`}
+                        alt={page.name}
+                        className="w-full h-full rounded-lg object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full rounded-lg bg-white flex items-center justify-center">
+                        <span className="text-xs font-bold text-blue-600">
+                          {page.name?.charAt(0)?.toUpperCase() || "P"}
+                        </span>
+                      </div>
+                    )}
+                  </button>
+                  <div className="ml-3">
+                    <div className="flex items-center space-x-1">
+                      <button
+                        onClick={() => navigate(`/page/${page.id}`)}
+                        className="text-sm font-medium text-gray-800 hover:text-blue-600 transition-colors"
+                      >
+                        {page.name}
+                      </button>
+                      {page.isVerified && (
+                        <svg
+                          className="w-4 h-4 text-blue-500"
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      {page.followersCount
+                        ? `${page.followersCount.toLocaleString()} followers`
+                        : "Verified page"}
+                    </p>
+                  </div>
                 </div>
               </div>
-              <div className="ml-3">
-                <p className="text-sm font-medium text-gray-800">
-                  Tech Company
-                </p>
-                <p className="text-xs text-gray-500">10.2k followers</p>
-              </div>
-            </div>
-            <button className="text-xs bg-red-600 text-white px-3 py-1 rounded-full hover:bg-red-700 transition">
-              Like
-            </button>
+            ))}
           </div>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <div className="w-10 h-10 rounded-lg bg-gradient-to-r from-green-500 to-teal-600 p-0.5">
-                <div className="w-full h-full rounded-lg bg-white flex items-center justify-center">
-                  <span className="text-xs font-bold text-green-600">FB</span>
-                </div>
-              </div>
-              <div className="ml-3">
-                <p className="text-sm font-medium text-gray-800">Food Blog</p>
-                <p className="text-xs text-gray-500">8.7k followers</p>
-              </div>
-            </div>
-            <button className="text-xs bg-red-600 text-white px-3 py-1 rounded-full hover:bg-red-700 transition">
-              Like
-            </button>
+        ) : (
+          <div className="text-center text-gray-500 py-6">
+            <p className="text-sm">No verified pages available</p>
           </div>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <div className="w-10 h-10 rounded-lg bg-gradient-to-r from-pink-500 to-red-600 p-0.5">
-                <div className="w-full h-full rounded-lg bg-white flex items-center justify-center">
-                  <span className="text-xs font-bold text-pink-600">FS</span>
-                </div>
-              </div>
-              <div className="ml-3">
-                <p className="text-sm font-medium text-gray-800">
-                  Fashion Store
-                </p>
-                <p className="text-xs text-gray-500">15.3k followers</p>
-              </div>
-            </div>
-            <button className="text-xs bg-red-600 text-white px-3 py-1 rounded-full hover:bg-red-700 transition">
-              Like
-            </button>
-          </div>
-        </div>
-        <button className="w-full text-center text-sm text-red-600 hover:text-red-700 font-medium mt-4">
-          View all Pro Pages
+        )}
+        <button
+          onClick={() => navigate("/pages")}
+          className="w-full text-center text-sm text-red-600 hover:text-red-700 font-medium mt-4"
+        >
+          View all Verified Pages
         </button>
       </div>
       {/* Sponsored Section */}
@@ -247,7 +336,7 @@ export default function RigthSidebar() {
             {sponsoredPost.imageUrl && (
               <div className="relative group cursor-pointer">
                 <img
-                  src={sponsoredPost.imageUrl}
+                  src={`${url}/${sponsoredPost.imageUrl}`}
                   alt={sponsoredPost.title}
                   className="w-full h-full object-cover rounded-lg"
                 />
@@ -286,6 +375,37 @@ export default function RigthSidebar() {
             <p className="text-sm">No sponsored posts available</p>
           </div>
         )}
+      </div>
+
+      {/* Links Section */}
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex items-center justify-center space-x-4 text-sm">
+          <button
+            onClick={() => navigate("/about")}
+            className="text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+          >
+            About Us
+          </button>
+          <span className="text-gray-400">•</span>
+          <button
+            onClick={() => navigate("/rules")}
+            className="text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+          >
+            ((Community Rules))
+          </button>
+          <span className="text-gray-400">•</span>
+          <button
+            onClick={() => navigate("/copyright")}
+            className="text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+          >
+            Copyright
+          </button>
+        </div>
+        <div className="mt-4 text-center">
+          <p className="text-xs text-gray-500">
+            © 2025 Los Santos Media. All rights reserved.
+          </p>
+        </div>
       </div>
     </div>
   );

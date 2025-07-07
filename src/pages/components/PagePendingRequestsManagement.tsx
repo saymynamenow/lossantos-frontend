@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
 import {
-  PersonIcon,
   CheckIcon,
   Cross2Icon,
   ClockIcon,
@@ -25,14 +24,7 @@ interface PagePendingRequestsManagementProps {
 
 const PagePendingRequestsManagement: React.FC<
   PagePendingRequestsManagementProps
-> = ({
-  pageId,
-  currentUser,
-  currentUserRole,
-  isOwner,
-  pendingRequestsCount,
-  onRequestsCountChange,
-}) => {
+> = ({ pageId, currentUserRole, isOwner, onRequestsCountChange }) => {
   const [requests, setRequests] = useState<PageJoinRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,7 +65,7 @@ const PagePendingRequestsManagement: React.FC<
     }
   };
 
-  const handleApproveRequest = async (userId: string, userName: string) => {
+  const handleApproveRequest = async (userId: string) => {
     try {
       setProcessingRequest(userId);
       await apiService.page.approveJoinRequest(pageId, userId);
@@ -228,9 +220,7 @@ const PagePendingRequestsManagement: React.FC<
 
                   <div className="flex items-center space-x-2">
                     <button
-                      onClick={() =>
-                        handleApproveRequest(request.user.id, request.user.name)
-                      }
+                      onClick={() => handleApproveRequest(request.user.id)}
                       disabled={processingRequest === request.user.id}
                       className="flex items-center px-3 py-1.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >

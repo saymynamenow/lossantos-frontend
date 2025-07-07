@@ -1,10 +1,11 @@
 import { useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { FaceIcon, PlusIcon } from "@radix-ui/react-icons";
 import { formatDistanceToNow } from "date-fns";
 import MentionText from "./MentionText";
 import UserBadges from "./UserBadges";
 import apiService from "../../services/api";
+import type { User } from "../../type";
 
 // Notification interface based on API response
 interface Notification {
@@ -37,19 +38,18 @@ interface Notification {
 }
 
 export default function NavigationBar({
-  username,
-  profilePicture,
   onFriendRequestUpdate,
 }: {
-  username?: string;
-  profilePicture?: string;
   onFriendRequestUpdate?: () => void;
 }) {
   const navigation = useNavigate();
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [userLoading, setUserLoading] = useState(true);
   const [friendRequests, setFriendRequests] = useState<any[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showFriendRequests, setShowFriendRequests] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const url = import.meta.env.VITE_UPLOADS_URL;
@@ -62,6 +62,23 @@ export default function NavigationBar({
   }>({ users: [], pages: [] });
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
+
+  // Use useRef to track timeout without causing re-renders
+  const searchTimeoutRef = useRef<number | null>(null);
+
+  // Fetch current user data
+  const fetchCurrentUser = async () => {
+    try {
+      setUserLoading(true);
+      const response = await apiService.user.getCurrentUser();
+      setCurrentUser(response);
+    } catch (error) {
+      console.error("Failed to fetch current user:", error);
+      setCurrentUser(null);
+    } finally {
+      setUserLoading(false);
+    }
+  };
 
   // Fetch friend requests
   const fetchFriendRequests = async () => {
@@ -94,6 +111,7 @@ export default function NavigationBar({
 
     try {
       setSearchLoading(true);
+      setShowSearchResults(true); // Show dropdown immediately with loading state
 
       // Use unified search API
       const response = await apiService.search.search(query, "all", 10);
@@ -102,26 +120,62 @@ export default function NavigationBar({
         users: response.users || [],
         pages: response.pages || [],
       });
-      setShowSearchResults(true);
     } catch (error) {
       console.error("Search error:", error);
       setSearchResults({ users: [], pages: [] });
+      // Keep dropdown open to show "no results" message
     } finally {
       setSearchLoading(false);
     }
   };
 
-  // Handle search input change with debounce
+  // Handle Enter key press for immediate search
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+
+      // Clear any pending timeout
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+        searchTimeoutRef.current = null;
+      }
+
+      // Immediate search
+      handleSearch(searchQuery);
+    }
+  };
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Handle search input change with auto-search after user stops typing
   const handleSearchInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setSearchQuery(value);
 
-    // Debounce search
-    const timeoutId = setTimeout(() => {
-      handleSearch(value);
-    }, 300);
+    // Clear any existing timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+      searchTimeoutRef.current = null;
+    }
 
-    return () => clearTimeout(timeoutId);
+    // Clear search results when input is empty
+    if (!value.trim()) {
+      setSearchResults({ users: [], pages: [] });
+      setShowSearchResults(false);
+      return;
+    }
+
+    // Set new timeout for auto-search
+    searchTimeoutRef.current = window.setTimeout(() => {
+      handleSearch(value);
+    }, 600);
   };
 
   // Navigate to user profile
@@ -194,17 +248,61 @@ export default function NavigationBar({
     }
   };
 
-  useEffect(() => {
-    if (username) {
-      fetchFriendRequests();
-      fetchNotifications();
-      const interval = setInterval(() => {
-        fetchFriendRequests();
-        fetchNotifications();
-      }, 30000);
-      return () => clearInterval(interval);
+  // Helper function to clear cookies
+  const clearCookie = (name: string) => {
+    // Clear cookie by setting it to expire in the past
+    document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+    // Also try with different path and domain variations
+    document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
+    document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=.${window.location.hostname};`;
+  };
+
+  // Handle logout
+  const handleLogout = async () => {
+    try {
+      // Call logout API first
+      await apiService.user.logout();
+
+      // Clear all stored auth tokens
+      localStorage.removeItem("token");
+      localStorage.removeItem("authToken");
+      sessionStorage.clear();
+
+      // Clear authentication cookies
+      clearCookie("token");
+      clearCookie("authToken");
+      clearCookie("auth_token");
+      clearCookie("accessToken");
+      clearCookie("refreshToken");
+
+      // Force hard redirect to login page
+      window.location.href = "/login";
+    } catch (error) {
+      console.error("Failed to logout:", error);
+
+      // Still clear tokens and cookies even if API call fails
+      localStorage.removeItem("token");
+      localStorage.removeItem("authToken");
+      sessionStorage.clear();
+
+      // Clear authentication cookies
+      clearCookie("token");
+      clearCookie("authToken");
+      clearCookie("auth_token");
+      clearCookie("accessToken");
+      clearCookie("refreshToken");
+
+      // Force hard redirect to login page even if API call fails
+      window.location.href = "/login";
     }
-  }, [username]);
+  };
+
+  useEffect(() => {
+    // Fetch user data and other initial data
+    fetchCurrentUser();
+    fetchFriendRequests();
+    fetchNotifications();
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -218,10 +316,18 @@ export default function NavigationBar({
       if (showSearchResults && !target.closest(".search-container")) {
         setShowSearchResults(false);
       }
+      if (showProfileDropdown && !target.closest(".profile-dropdown")) {
+        setShowProfileDropdown(false);
+      }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [showFriendRequests, showNotifications, showSearchResults]);
+  }, [
+    showFriendRequests,
+    showNotifications,
+    showSearchResults,
+    showProfileDropdown,
+  ]);
 
   return (
     <nav className="w-full flex items-center justify-between px-8 py-4 bg-white shadow-lg border-b border-gray-300 sticky top-0 z-50">
@@ -242,127 +348,144 @@ export default function NavigationBar({
             placeholder="Search Los Santos Media..."
             value={searchQuery}
             onChange={handleSearchInput}
+            onKeyDown={handleSearchKeyDown}
             className="w-full px-4 py-2 text-black rounded-full border border-gray-200 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-red-200"
           />
 
           {/* Search Results Dropdown */}
-          {showSearchResults &&
-            (searchResults.users.length > 0 ||
-              searchResults.pages.length > 0 ||
-              searchLoading) && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-96 overflow-y-auto">
-                {searchLoading ? (
-                  <div className="p-4 text-center text-gray-500">
-                    Searching...
+          {showSearchResults && (
+            <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-96 overflow-y-auto">
+              {searchLoading ? (
+                <div className="p-4 text-center text-gray-500">
+                  <div className="inline-flex items-center space-x-2">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-500"></div>
+                    <span>Searching...</span>
                   </div>
-                ) : (
-                  <>
-                    {/* Users Section */}
-                    {searchResults.users.length > 0 && (
-                      <div>
-                        <div className="p-3 border-b border-gray-200 bg-gray-50">
-                          <h4 className="text-sm font-semibold text-gray-700">
-                            People
-                          </h4>
-                        </div>
-                        {searchResults.users.map((user: any) => (
-                          <div
-                            key={user.id}
-                            className="p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100"
-                            onClick={() => navigateToUser(user.username)}
-                          >
-                            <div className="flex items-center space-x-3">
-                              <div className="w-10 h-10 rounded-full bg-gray-200 overflow-hidden flex-shrink-0">
-                                {user.profilePicture ? (
-                                  <img
-                                    src={user.profilePicture}
-                                    alt={user.name}
-                                    className="w-full h-full object-cover"
+                </div>
+              ) : (
+                <>
+                  {/* Users Section */}
+                  {searchResults.users.length > 0 && (
+                    <div>
+                      <div className="p-3 border-b border-gray-200 bg-gray-50">
+                        <h4 className="text-sm font-semibold text-gray-700">
+                          People ({searchResults.users.length})
+                        </h4>
+                      </div>
+                      {searchResults.users.map((user: any) => (
+                        <div
+                          key={user.id}
+                          className="p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100"
+                          onClick={() => navigateToUser(user.username)}
+                        >
+                          <div className="flex items-center space-x-3">
+                            <div className="w-10 h-10 rounded-full bg-gray-200 overflow-hidden flex-shrink-0">
+                              {user.profilePicture ? (
+                                <img
+                                  src={user.profilePicture}
+                                  alt={user.name}
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center bg-gray-300">
+                                  <FaceIcon
+                                    width={20}
+                                    height={20}
+                                    className="text-gray-600"
                                   />
-                                ) : (
-                                  <div className="w-full h-full flex items-center justify-center bg-gray-300">
-                                    <FaceIcon
-                                      width={20}
-                                      height={20}
-                                      className="text-gray-600"
-                                    />
-                                  </div>
-                                )}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center space-x-1">
-                                  <p className="text-sm font-medium text-gray-900 truncate">
-                                    {user.name || user.username}
-                                  </p>
-                                  <UserBadges isVerified={user.isVerified} />
                                 </div>
-                                <p className="text-xs text-gray-500 truncate">
-                                  @{user.username}
-                                </p>
-                              </div>
+                              )}
                             </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Pages Section */}
-                    {searchResults.pages.length > 0 && (
-                      <div>
-                        <div className="p-3 border-b border-gray-200 bg-gray-50">
-                          <h4 className="text-sm font-semibold text-gray-700">
-                            Pages
-                          </h4>
-                        </div>
-                        {searchResults.pages.map((page: any) => (
-                          <div
-                            key={page.id}
-                            className="p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100"
-                            onClick={() => navigateToPage(page.id)}
-                          >
-                            <div className="flex items-center space-x-3">
-                              <div className="w-10 h-10 rounded-full bg-gray-200 overflow-hidden flex-shrink-0">
-                                {page.profileImage ? (
-                                  <img
-                                    src={`${url}/${page.profileImage}`}
-                                    alt={page.name}
-                                    className="w-full h-full object-cover"
-                                  />
-                                ) : (
-                                  <div className="w-full h-full flex items-center justify-center bg-red-500">
-                                    <span className="text-white font-bold text-xs">
-                                      {page.name.charAt(0).toUpperCase()}
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                              <div className="flex-1 min-w-0">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center space-x-1">
                                 <p className="text-sm font-medium text-gray-900 truncate">
-                                  {page.name}
+                                  {user.name || user.username}
                                 </p>
-                                <p className="text-xs text-gray-500 truncate">
-                                  {page.category} • {page._count.followers || 0}{" "}
-                                  followers
-                                </p>
+                                <UserBadges isVerified={user.isVerified} />
                               </div>
+                              <p className="text-xs text-gray-500 truncate">
+                                @{user.username}
+                              </p>
                             </div>
                           </div>
-                        ))}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Pages Section */}
+                  {searchResults.pages.length > 0 && (
+                    <div>
+                      <div className="p-3 border-b border-gray-200 bg-gray-50">
+                        <h4 className="text-sm font-semibold text-gray-700">
+                          Pages ({searchResults.pages.length})
+                        </h4>
+                      </div>
+                      {searchResults.pages.map((page: any) => (
+                        <div
+                          key={page.id}
+                          className="p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100"
+                          onClick={() => navigateToPage(page.id)}
+                        >
+                          <div className="flex items-center space-x-3">
+                            <div className="w-10 h-10 rounded-full bg-gray-200 overflow-hidden flex-shrink-0">
+                              {page.profileImage ? (
+                                <img
+                                  src={`${url}/${page.profileImage}`}
+                                  alt={page.name}
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center bg-red-500">
+                                  <span className="text-white font-bold text-xs">
+                                    {page.name.charAt(0).toUpperCase()}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-900 truncate">
+                                {page.name}
+                              </p>
+                              <p className="text-xs text-gray-500 truncate">
+                                {page.category} • {page._count.followers || 0}{" "}
+                                followers
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* No Results */}
+                  {searchResults.users.length === 0 &&
+                    searchResults.pages.length === 0 &&
+                    searchQuery.trim() && (
+                      <div className="p-6 text-center text-gray-500">
+                        <svg
+                          className="mx-auto h-12 w-12 text-gray-400 mb-3"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                          />
+                        </svg>
+                        <p className="text-sm font-medium">No results found</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Try searching for something else
+                        </p>
                       </div>
                     )}
-
-                    {/* No Results */}
-                    {searchResults.users.length === 0 &&
-                      searchResults.pages.length === 0 &&
-                      !searchLoading && (
-                        <div className="p-4 text-center text-gray-500">
-                          No results found for "{searchQuery}"
-                        </div>
-                      )}
-                  </>
-                )}
-              </div>
-            )}
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
       {/* Profile, Notifications, Friend Requests, Messages (right) */}
@@ -592,28 +715,141 @@ export default function NavigationBar({
             5
           </span>
         </button>
-        {/* Profile Avatar */}
-        <button
-          className="w-10 h-10 rounded-full bg-gray-200 border-2 border-red-500 overflow-hidden cursor-pointer flex items-center justify-center"
-          onClick={() => navigation(`/profile/${username}`)}
-        >
-          {profilePicture ? (
-            <img
-              src={profilePicture}
-              alt="Profile"
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <svg
-              className="w-full h-full text-gray-400"
-              fill="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <circle cx="12" cy="8" r="4" />
-              <path d="M4 20c0-4 8-4 8-4s8 0 8 4" />
-            </svg>
+        {/* Profile Avatar with Dropdown */}
+        <div className="relative profile-dropdown">
+          <button
+            className="w-10 h-10 rounded-full bg-gray-200 border-2 border-red-500 overflow-hidden cursor-pointer flex items-center justify-center hover:border-red-600 transition-colors"
+            onClick={() => setShowProfileDropdown(!showProfileDropdown)}
+            disabled={userLoading || !currentUser}
+          >
+            {userLoading ? (
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-400"></div>
+            ) : currentUser?.profilePicture ? (
+              <img
+                src={`${url}/${currentUser.profilePicture}`}
+                alt="Profile"
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <svg
+                className="w-full h-full text-gray-400"
+                fill="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <circle cx="12" cy="8" r="4" />
+                <path d="M4 20c0-4 8-4 8-4s8 0 8 4" />
+              </svg>
+            )}
+          </button>
+
+          {/* Profile Dropdown Menu */}
+          {showProfileDropdown && currentUser && (
+            <div className="absolute right-0 top-12 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+              {/* User Info Header */}
+              <div className="p-4 border-b border-gray-200">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-full bg-gray-200 overflow-hidden flex-shrink-0">
+                    {currentUser.profilePicture ? (
+                      <img
+                        src={`${url}/${currentUser.profilePicture}`}
+                        alt="Profile"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-gray-300">
+                        <FaceIcon
+                          width={20}
+                          height={20}
+                          className="text-gray-600"
+                        />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {currentUser.name || currentUser.username}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate">
+                      @{currentUser.username}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Menu Items */}
+              <div className="py-2">
+                <button
+                  onClick={() => {
+                    navigation(`/profile/${currentUser.username}`);
+                    setShowProfileDropdown(false);
+                  }}
+                  className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center space-x-3 transition-colors"
+                >
+                  <svg
+                    width="18"
+                    height="18"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    viewBox="0 0 24 24"
+                    className="text-gray-500"
+                  >
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                    <circle cx="12" cy="7" r="4" />
+                  </svg>
+                  <span>View Profile</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    navigation("/settings");
+                    setShowProfileDropdown(false);
+                  }}
+                  className="w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center space-x-3 transition-colors"
+                >
+                  <svg
+                    width="18"
+                    height="18"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    viewBox="0 0 24 24"
+                    className="text-gray-500"
+                  >
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1 1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                  </svg>
+                  <span>Settings</span>
+                </button>
+
+                <div className="border-t border-gray-200 my-2"></div>
+
+                <button
+                  onClick={() => {
+                    setShowProfileDropdown(false);
+                    handleLogout();
+                  }}
+                  className="w-full px-4 py-3 text-left text-sm text-red-600 hover:bg-red-50 flex items-center space-x-3 transition-colors"
+                >
+                  <svg
+                    width="18"
+                    height="18"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    viewBox="0 0 24 24"
+                    className="text-red-500"
+                  >
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                    <polyline points="16 17 21 12 16 7" />
+                    <line x1="21" y1="12" x2="9" y2="12" />
+                  </svg>
+                  <span>Logout</span>
+                </button>
+              </div>
+            </div>
           )}
-        </button>
+        </div>
       </div>
     </nav>
   );
